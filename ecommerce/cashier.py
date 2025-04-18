@@ -57,6 +57,12 @@ def cashier_dashboard(request):
         is_processed=False
     ).order_by('time')
 
+    # Get completed reservations
+    completed_reservations = Reservation.objects.filter(
+        status='COMPLETED',
+        date=today
+    ).order_by('-processed_at')
+
     # Calculate today's sales
     today_sales = completed_orders.aggregate(
         total=Sum('total_amount')
@@ -97,6 +103,7 @@ def cashier_dashboard(request):
         'completed_orders': completed_orders,
         'cancelled_orders': cancelled_orders,
         'unprocessed_reservations': unprocessed_reservations,
+        'completed_reservations': completed_reservations,
         'today_sales': today_sales,
         'today_order_count': today_order_count,
         'avg_order_value': avg_order_value,
@@ -979,9 +986,9 @@ def reservations_list(request):
     """View for cashiers to see and process confirmed reservations"""
     today = timezone.now().date()
 
-    # Get confirmed reservations for today
+    # Get confirmed and completed reservations for today
     reservations = Reservation.objects.filter(
-        status='CONFIRMED',
+        status__in=['CONFIRMED', 'COMPLETED'],
         date=today
     ).order_by('time')
 
@@ -1001,7 +1008,6 @@ def reservations_list(request):
 
     return render(request, 'cashier/reservations_list.html', context)
 
-
 @login_required
 def process_reservation(request, reservation_id):
     """Process a confirmed reservation and create an order"""
@@ -1014,28 +1020,136 @@ def process_reservation(request, reservation_id):
 
     if request.method == 'POST':
         with transaction.atomic():
-            # Mark reservation as processed
+            # Mark reservation as processed and update status to COMPLETED
             reservation.is_processed = True
             reservation.processed_by = request.user
             reservation.processed_at = timezone.now()
-            reservation.save()
+            reservation.status = 'COMPLETED'  # Update status to COMPLETED when processed
+            reservation.save(update_fields=['is_processed', 'processed_by', 'processed_at', 'status'])
+
+            # Check if there are menu items in the special_requests field
+            menu_items_data = None
+            special_requests = reservation.special_requests or ''
+
+            # Extract menu items data if present
+            import re
+            menu_items_match = re.search(r'\[MENU_ITEMS_DATA: (.+?)\]', special_requests)
+            if menu_items_match:
+                menu_items_json_str = menu_items_match.group(1)
+                # Remove the menu items data from special_requests
+                clean_special_requests = re.sub(r'\n\n\[MENU_ITEMS_DATA: .+?\]', '', special_requests)
+
+                # Parse the menu items data
+                import json
+                try:
+                    menu_items_data = json.loads(menu_items_json_str)
+                except json.JSONDecodeError:
+                    print(f"Error parsing menu items data: {menu_items_json_str}")
+            else:
+                clean_special_requests = special_requests
+
+            # Calculate total amount if menu items are present
+            total_amount = Decimal('0.00')
+            if menu_items_data:
+                for item in menu_items_data:
+                    menu_item = MenuItem.objects.get(id=item['id'])
+                    quantity = item['quantity']
+                    total_amount += menu_item.price * Decimal(str(quantity))
+
+            # Determine payment method and status based on reservation payment
+            payment_method = 'CASH'  # Default
+            payment_status = 'PENDING'
+            order_status = 'PENDING'
+            latest_payment = None
+
+            # Check if there's a payment for this reservation
+            # First look for completed payments
+            completed_payments = ReservationPayment.objects.filter(
+                reservation=reservation,
+                status='COMPLETED'
+            ).order_by('-payment_date')
+
+            if completed_payments.exists():
+                # Use the most recent completed payment
+                latest_payment = completed_payments.first()
+
+                # Always set payment method to GCASH for reservation payments
+                payment_method = 'GCASH'
+
+                # Set payment status based on payment type
+                # For FULL payments, always mark as PAID and COMPLETED
+                if latest_payment.payment_type == 'FULL':
+                    payment_status = 'PAID'
+                    order_status = 'COMPLETED'
+                else:  # DEPOSIT
+                    payment_status = 'PARTIALLY_PAID'
+            else:
+                # If no completed payments, check for pending payments
+                pending_payments = ReservationPayment.objects.filter(
+                    reservation=reservation,
+                    status='PENDING'
+                ).order_by('-payment_date')
+
+                if pending_payments.exists():
+                    # Use the most recent pending payment
+                    latest_payment = pending_payments.first()
+
+                    # Always set payment method to GCASH for reservation payments
+                    payment_method = 'GCASH'
 
             # Create a new order for this reservation
             order = Order.objects.create(
                 user=reservation.user,
-                status='PENDING',
+                status=order_status,
                 order_type='DINE_IN',
-                payment_method='CASH',  # Default, can be changed later
-                payment_status='PENDING',
+                payment_method=payment_method,
+                payment_status=payment_status,
                 table_number=reservation.table_number,
                 number_of_guests=reservation.party_size,
-                special_instructions=reservation.special_requests,
+                special_instructions=clean_special_requests,
                 created_by=request.user,
-                total_amount=Decimal('0.00'),  # Default value, will be updated when items are added
+                total_amount=total_amount,
                 tax_amount=Decimal('0.00'),
                 delivery_fee=Decimal('0.00'),
                 discount_amount=Decimal('0.00')
             )
+
+            # If there's a completed payment, create a payment record for the order
+            if latest_payment and latest_payment.status == 'COMPLETED':
+                # Create a payment record for the order to maintain consistency
+                Payment.objects.create(
+                    order=order,
+                    amount=latest_payment.amount,
+                    payment_method='GCASH',
+                    status='COMPLETED',
+                    reference_number=latest_payment.reference_number,
+                    payment_proof=latest_payment.payment_proof,
+                    verified_by=latest_payment.verified_by,
+                    verification_date=latest_payment.verification_date,
+                    notes=f'Payment from reservation #{reservation.id}'
+                )
+            elif latest_payment and latest_payment.status == 'PENDING':
+                # Create a pending payment record for the order
+                Payment.objects.create(
+                    order=order,
+                    amount=latest_payment.amount,
+                    payment_method='GCASH',
+                    status='PENDING',
+                    reference_number=latest_payment.reference_number,
+                    payment_proof=latest_payment.payment_proof,
+                    notes=f'Pending payment from reservation #{reservation.id}'
+                )
+
+            # Add menu items to the order if present
+            if menu_items_data:
+                for item in menu_items_data:
+                    menu_item = MenuItem.objects.get(id=item['id'])
+                    OrderItem.objects.create(
+                        order=order,
+                        menu_item=menu_item,
+                        quantity=item['quantity'],
+                        price=menu_item.price
+                    )
 
             # Log the activity
             StaffActivity.objects.create(
@@ -1094,28 +1208,79 @@ def verify_reservation_payment(request, payment_id):
     payment = get_object_or_404(ReservationPayment, id=payment_id)
 
     if request.method == 'POST':
-        # Mark payment as completed
-        payment.status = 'COMPLETED'
-        payment.verified_by = request.user
-        payment.verification_date = timezone.now()
-        payment.save()
+        action = request.POST.get('action')
+        if action == 'verify':
+            # Mark payment as completed
+            payment.status = 'COMPLETED'
+            payment.verified_by = request.user
+            payment.verification_date = timezone.now()
+            payment.save()
 
-        # Update reservation status
-        reservation = payment.reservation
-        reservation.status = 'CONFIRMED'
-        reservation.save()
+            # Clean up any other pending payments for this reservation
+            other_pending_payments = ReservationPayment.objects.filter(
+                reservation=payment.reservation,
+                status='PENDING'
+            ).exclude(id=payment.id)
 
-        # Log the activity
-        StaffActivity.objects.create(
-            staff=request.user,
-            action='VERIFY_RESERVATION_PAYMENT',
-            details=f"Verified payment of ₱{payment.amount} for Reservation #{reservation.id}"
-        )
+            if other_pending_payments.exists():
+                for old_payment in other_pending_payments:
+                    old_payment.delete()
 
-        messages.success(request, f'Payment for Reservation #{reservation.id} has been verified successfully!')
-        return redirect('pending_reservation_payments')
+            reservation = payment.reservation
+            orders = Order.objects.filter(
+                table_number=reservation.table_number,
+                number_of_guests=reservation.party_size,
+                user=reservation.user
+            )
 
-    return redirect('view_reservation_payment', payment_id=payment_id)
+            if orders.exists():
+                order = orders.first()
+                order.payment_method = 'GCASH'
+                if payment.payment_type == 'FULL':
+                    order.payment_status = 'PAID'
+                    order.status = 'COMPLETED'
+                    Payment.objects.create(
+                        order=order,
+                        amount=payment.amount,
+                        payment_method='GCASH',
+                        status='COMPLETED',
+                        reference_number=payment.reference_number,
+                        payment_proof=payment.payment_proof,
+                        verified_by=request.user,
+                        verification_date=timezone.now(),
+                        notes=f'Payment from reservation #{reservation.id}'
+                    )
+                else:
+                    order.payment_status = 'PARTIALLY_PAID'
+                    Payment.objects.create(
+                        order=order,
+                        amount=payment.amount,
+                        payment_method='GCASH',
+                        status='COMPLETED',
+                        reference_number=payment.reference_number,
+                        payment_proof=payment.payment_proof,
+                        verified_by=request.user,
+                        verification_date=timezone.now(),
+                        notes=f'Partial payment (deposit) from reservation #{reservation.id}'
+                    )
+                order.save(update_fields=['payment_method', 'payment_status', 'status'])
+                messages.success(request, f'Payment verified and order #{order.id} has been updated.')
+
+            StaffActivity.objects.create(
+                staff=request.user,
+                action='VERIFY_RESERVATION_PAYMENT',
+                details=f"Verified payment of ₱{payment.amount} for Reservation #{reservation.id}"
+            )
+            messages.success(request, f'Payment for Reservation #{reservation.id} has been verified successfully!')
+            return redirect('pending_reservation_payments')
+        elif action == 'reject':
+            # Implement rejection logic here if needed
+            messages.info(request, 'Payment rejection not implemented yet.')
+            return redirect('pending_reservation_payments')
+        else:
+            messages.error(request, 'Invalid action.')
+            return redirect('view_reservation_payment', payment_id=payment_id)
+    return render(request, 'cashier/view_reservation_payment.html', {'payment': payment})
 
 
 @login_required
@@ -1144,3 +1309,16 @@ def reject_reservation_payment(request, payment_id):
         return redirect('pending_reservation_payments')
 
     return redirect('view_reservation_payment', payment_id=payment_id)
+
+@login_required
+def cashier_mark_prepared(request, reservation_id):
+    """Mark a reservation as prepared (for kitchen/cashier workflow)"""
+    from ecommerce.models import Reservation
+    reservation = get_object_or_404(Reservation, id=reservation_id)
+    if reservation.status == 'CONFIRMED':
+        reservation.status = 'COMPLETED'  # Or 'PREPARED' if you have such a status
+        reservation.save(update_fields=['status'])
+        messages.success(request, f'Reservation #{reservation.id} marked as prepared.')
+    else:
+        messages.warning(request, f'Reservation #{reservation.id} cannot be marked as prepared.')
+    return redirect('cashier_reservations_list')

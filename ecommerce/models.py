@@ -95,6 +95,7 @@ class Reservation(models.Model):
     STATUS_CHOICES = [
         ('PENDING', 'Pending'),
         ('CONFIRMED', 'Confirmed'),
+        ('COMPLETED', 'Completed'),  # Added for completed reservations
         ('CANCELLED', 'Cancelled')
     ]
 
@@ -289,9 +290,24 @@ class Payment(models.Model):
         super().save(*args, **kwargs)
 
         # Update order payment status if this payment is completed
-        if self.status == 'COMPLETED' and self.order.payment_status != 'PAID':
+        if self.status == 'COMPLETED':
+            # Update the order payment status to PAID
             self.order.payment_status = 'PAID'
-            self.order.save(update_fields=['payment_status'])
+
+            # Also update the payment method to match this payment
+            self.order.payment_method = self.payment_method
+
+            # If the order is still pending, update its status based on payment method
+            if self.order.status == 'PENDING':
+                if self.payment_method == 'GCASH':
+                    # For GCash payments, mark as COMPLETED since it's already paid
+                    self.order.status = 'COMPLETED'
+                else:
+                    # For other payment methods, move to PREPARING
+                    self.order.status = 'PREPARING'
+
+            # Save the order with all updated fields
+            self.order.save(update_fields=['payment_status', 'payment_method', 'status'])
 
 
 class Refund(models.Model):
@@ -352,18 +368,25 @@ class ReservationPayment(models.Model):
         # Update reservation payment status if this payment is completed
         if self.status == 'COMPLETED':
             reservation = self.reservation
-            total_paid = ReservationPayment.objects.filter(
-                reservation=reservation,
-                status='COMPLETED'
-            ).aggregate(total=models.Sum('amount'))['total'] or 0
 
-            if total_paid >= reservation.total_amount:
+            # If this is a FULL payment, always mark as PAID regardless of amount
+            if self.payment_type == 'FULL':
                 reservation.payment_status = 'PAID'
-            elif total_paid > 0:
-                reservation.payment_status = 'PARTIALLY_PAID'
             else:
-                reservation.payment_status = 'UNPAID'
+                # For DEPOSIT payments, check the total amount paid
+                total_paid = ReservationPayment.objects.filter(
+                    reservation=reservation,
+                    status='COMPLETED'
+                ).aggregate(total=models.Sum('amount'))['total'] or 0
 
+                if total_paid >= reservation.total_amount:
+                    reservation.payment_status = 'PAID'
+                elif total_paid > 0:
+                    reservation.payment_status = 'PARTIALLY_PAID'
+                else:
+                    reservation.payment_status = 'UNPAID'
+
+            # Remove auto-confirmation of reservation when paid
             reservation.save(update_fields=['payment_status'])
 
 

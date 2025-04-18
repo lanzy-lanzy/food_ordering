@@ -23,7 +23,8 @@ from .cashier import (
     orders_list as cashier_orders_list, print_receipt, print_multiple_receipts,
     pending_payments, view_payment, verify_payment, reject_payment, record_payment,
     cancel_order, reservations_list as cashier_reservations_list, process_reservation,
-    pending_reservation_payments, view_reservation_payment, verify_reservation_payment, reject_reservation_payment
+    pending_reservation_payments, view_reservation_payment, verify_reservation_payment, reject_reservation_payment,
+    cashier_mark_prepared
 )
 from .manager import (
     manager_dashboard, sales_report, inventory_overview,
@@ -133,6 +134,7 @@ urlpatterns = [
     # Cashier Reservation Management
     path('cashier/reservations/', cashier_reservations_list, name='cashier_reservations_list'),
     path('cashier/reservations/<int:reservation_id>/process/', process_reservation, name='process_reservation'),
+    path('cashier/reservation/<int:reservation_id>/mark-prepared/', cashier_mark_prepared, name='cashier_mark_prepared'),
 
     # Cashier Reservation Payment Management
     path('cashier/reservation-payments/', pending_reservation_payments, name='pending_reservation_payments'),

@@ -859,54 +859,83 @@ def make_reservation(request):
     if request.method == 'POST':
         form = ReservationForm(request.POST, user=request.user if request.user.is_authenticated else None)
         if form.is_valid():
-            with transaction.atomic():
-                # Save the reservation
-                reservation = form.save(commit=False)
-                reservation.user = request.user  # Always associate with the logged-in user
+            # Check for existing pending reservations with same date, time, and table
+            table_number = request.POST.get('table_number')
+            date = form.cleaned_data['date']
+            time = form.cleaned_data['time']
 
-                # Add table number if selected
-                table_number = request.POST.get('table_number')
+            # Look for existing reservations with the same details
+            existing_reservation = Reservation.objects.filter(
+                user=request.user,
+                date=date,
+                time=time,
+                status='PENDING',
+                payment_status='UNPAID'
+            )
+
+            if table_number:
+                existing_reservation = existing_reservation.filter(table_number=table_number)
+
+            # If an existing reservation is found, use it instead of creating a new one
+            if existing_reservation.exists():
+                reservation = existing_reservation.first()
+                # Update any changed fields
+                reservation.name = form.cleaned_data['name']
+                reservation.email = form.cleaned_data['email']
+                reservation.phone = form.cleaned_data['phone']
+                reservation.party_size = form.cleaned_data['party_size']
+                reservation.special_requests = form.cleaned_data['special_requests']
                 if table_number:
                     reservation.table_number = table_number
+            else:
+                # Create a new reservation
+                with transaction.atomic():
+                    # Save the reservation
+                    reservation = form.save(commit=False)
+                    reservation.user = request.user  # Always associate with the logged-in user
 
-                # Process menu items if any were selected
-                menu_items_data = request.POST.get('menu_items_data')
-                total_amount = Decimal('0.00')
+                    # Add table number if selected
+                    if table_number:
+                        reservation.table_number = table_number
 
-                if menu_items_data:
-                    try:
-                        import json
-                        menu_items_json = json.loads(menu_items_data)
+            # Process menu items if any were selected (for both new and existing reservations)
+            menu_items_data = request.POST.get('menu_items_data')
+            total_amount = Decimal('0.00')
 
-                        if menu_items_json and len(menu_items_json) > 0:
-                            # Calculate total amount for the reservation
-                            for item in menu_items_json:
-                                menu_item = MenuItem.objects.get(id=item['id'])
-                                quantity = item['quantity']
-                                total_amount += menu_item.price * Decimal(str(quantity))
-                    except Exception as e:
-                        # Log the error but continue with the reservation
-                        print(f"Error processing menu items: {str(e)}")
+            if menu_items_data:
+                try:
+                    import json
+                    menu_items_json = json.loads(menu_items_data)
 
-                # Set the total amount for the reservation
-                reservation.total_amount = total_amount
-                reservation.save()
+                    if menu_items_json and len(menu_items_json) > 0:
+                        # Calculate total amount for the reservation
+                        for item in menu_items_json:
+                            menu_item = MenuItem.objects.get(id=item['id'])
+                            quantity = item['quantity']
+                            total_amount += menu_item.price * Decimal(str(quantity))
+                except Exception as e:
+                    # Log the error but continue with the reservation
+                    print(f"Error processing menu items: {str(e)}")
 
-                # Store menu items in session for later use
-                request.session['reservation_menu_items'] = menu_items_data
-                request.session['reservation_id'] = reservation.id
+            # Set the total amount for the reservation
+            reservation.total_amount = total_amount
+            reservation.save()
 
-                # Check if this is an AJAX request
-                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                    return JsonResponse({
-                        'success': True,
-                        'message': 'Reservation created successfully.',
-                        'reservation_id': reservation.id,
-                        'redirect_url': reverse('reservation_payment', args=[reservation.id])
-                    })
-                else:
-                    # Redirect to payment page for non-AJAX requests
-                    return redirect('reservation_payment', reservation_id=reservation.id)
+            # Store menu items in session for later use
+            request.session['reservation_menu_items'] = menu_items_data
+            request.session['reservation_id'] = reservation.id
+
+            # Check if this is an AJAX request
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({
+                    'success': True,
+                    'message': 'Reservation created successfully.',
+                    'reservation_id': reservation.id,
+                    'redirect_url': reverse('reservation_payment', args=[reservation.id])
+                })
+            else:
+                # Redirect to payment page for non-AJAX requests
+                return redirect('reservation_payment', reservation_id=reservation.id)
         else:
             # If AJAX request and form is invalid
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -951,20 +980,39 @@ def reservation_payment(request, reservation_id):
     try:
         reservation = Reservation.objects.get(id=reservation_id, user=request.user)
 
+        # Block payment if reservation is not confirmed by manager
+        if reservation.status != 'CONFIRMED':
+            messages.warning(request, 'Your reservation has not yet been confirmed by the manager. Please wait for confirmation before proceeding with payment.')
+            return redirect('my_reservations')
+
         # Check if reservation is already paid
         if reservation.payment_status == 'PAID':
             messages.info(request, 'This reservation has already been paid.')
             return redirect('my_reservations')
 
-        # Get or create a payment record
-        payment, created = ReservationPayment.objects.get_or_create(
+        # Check for existing pending payments
+        existing_payments = ReservationPayment.objects.filter(
             reservation=reservation,
-            status='PENDING',
-            defaults={
-                'amount': Decimal('0.00'),  # Will be set based on payment type
-                'payment_method': 'GCASH'
-            }
-        )
+            status='PENDING'
+        ).order_by('-payment_date')
+
+        if existing_payments.exists():
+            # Use the most recent pending payment
+            payment = existing_payments.first()
+
+            # Clean up any other pending payments to prevent duplicates
+            if existing_payments.count() > 1:
+                # Keep the most recent one and delete others
+                for old_payment in existing_payments[1:]:
+                    old_payment.delete()
+        else:
+            # Create a new payment record if none exists
+            payment = ReservationPayment.objects.create(
+                reservation=reservation,
+                status='PENDING',
+                amount=Decimal('0.00'),  # Will be set based on payment type
+                payment_method='GCASH'
+            )
 
         if request.method == 'POST':
             form = ReservationPaymentForm(request.POST, request.FILES, instance=payment)
@@ -981,36 +1029,18 @@ def reservation_payment(request, reservation_id):
                 payment.status = 'PENDING'  # Will be verified by staff
                 payment.save()
 
-                # Process menu items if any were selected
+                # Store menu items data in the reservation for later processing by cashier
                 menu_items_data = request.session.get('reservation_menu_items')
                 if menu_items_data:
                     try:
-                        import json
-                        menu_items_json = json.loads(menu_items_data)
+                        # Store the menu items data in the reservation's special_requests field
+                        # This will be used by the cashier when processing the reservation
+                        if not reservation.special_requests:
+                            reservation.special_requests = ''
 
-                        # Create an order for the menu items
-                        order = Order.objects.create(
-                            user=request.user,
-                            status='PENDING',
-                            order_type='DINE_IN',
-                            payment_method='GCASH',
-                            payment_status='PENDING',
-                            total_amount=reservation.total_amount,
-                            tax_amount=Decimal('0.00'),
-                            table_number=reservation.table_number,
-                            number_of_guests=reservation.party_size,
-                            special_instructions=reservation.special_requests
-                        )
-
-                        # Add order items
-                        for item in menu_items_json:
-                            menu_item = MenuItem.objects.get(id=item['id'])
-                            OrderItem.objects.create(
-                                order=order,
-                                menu_item=menu_item,
-                                quantity=item['quantity'],
-                                price=menu_item.price
-                            )
+                        # Add a note about menu items being included
+                        reservation.special_requests += f"\n\n[MENU_ITEMS_DATA: {menu_items_data}]"
+                        reservation.save(update_fields=['special_requests'])
 
                         # Clear session data
                         if 'reservation_menu_items' in request.session:
@@ -1018,7 +1048,7 @@ def reservation_payment(request, reservation_id):
                         if 'reservation_id' in request.session:
                             del request.session['reservation_id']
                     except Exception as e:
-                        messages.error(request, f"Error processing menu items: {str(e)}")
+                        messages.error(request, f"Error storing menu items: {str(e)}")
 
                 messages.success(request, 'Your payment has been submitted and is awaiting verification. You will receive a confirmation once it is approved.')
                 return redirect('my_reservations')

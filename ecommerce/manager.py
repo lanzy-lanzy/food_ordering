@@ -475,12 +475,14 @@ def reservations_dashboard(request):
     total_reservations = Reservation.objects.count()
     pending_reservations = Reservation.objects.filter(status='PENDING').count()
     confirmed_reservations = Reservation.objects.filter(status='CONFIRMED').count()
+    completed_reservations = Reservation.objects.filter(status='COMPLETED').count()
     cancelled_reservations = Reservation.objects.filter(status='CANCELLED').count()
 
     # Today's reservations
     today_reservations = Reservation.objects.filter(date=today).order_by('time')
     today_pending = today_reservations.filter(status='PENDING').count()
     today_confirmed = today_reservations.filter(status='CONFIRMED').count()
+    today_completed = today_reservations.filter(status='COMPLETED').count()
 
     # Upcoming reservations (next 7 days)
     next_week = today + datetime.timedelta(days=7)
@@ -508,6 +510,9 @@ def reservations_dashboard(request):
         reservations = reservations.filter(date__lt=today)
     elif date_filter == 'next_week':
         reservations = reservations.filter(date__gt=today, date__lte=next_week)
+
+    # Get only pending reservations for actionable table
+    pending_reservations_qs = Reservation.objects.filter(status='PENDING').order_by('date', 'time')
 
     # Update reservation status if form submitted
     if request.method == 'POST':
@@ -539,6 +544,7 @@ def reservations_dashboard(request):
                 'total': 0,
                 'pending': 0,
                 'confirmed': 0,
+                'completed': 0,
                 'cancelled': 0
             }
 
@@ -547,6 +553,8 @@ def reservations_dashboard(request):
             calendar_data[date_str]['pending'] += 1
         elif res.status == 'CONFIRMED':
             calendar_data[date_str]['confirmed'] += 1
+        elif res.status == 'COMPLETED':
+            calendar_data[date_str]['completed'] += 1
         elif res.status == 'CANCELLED':
             calendar_data[date_str]['cancelled'] += 1
 
@@ -554,12 +562,15 @@ def reservations_dashboard(request):
         'total_reservations': total_reservations,
         'pending_reservations': pending_reservations,
         'confirmed_reservations': confirmed_reservations,
+        'completed_reservations': completed_reservations,
         'cancelled_reservations': cancelled_reservations,
         'today_reservations': today_reservations,
         'today_pending': today_pending,
         'today_confirmed': today_confirmed,
+        'today_completed': today_completed,
         'upcoming_reservations': upcoming_reservations,
         'reservations': reservations,
+        'pending_reservations_qs': pending_reservations_qs,
         'status_filter': status_filter or 'all',
         'date_filter': date_filter,
         'status_choices': Reservation.STATUS_CHOICES,

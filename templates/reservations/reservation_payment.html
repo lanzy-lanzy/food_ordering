@@ -154,6 +154,11 @@
                         <p class="text-gray-300 mt-3 bg-green-900/30 p-2 rounded"><i class="fas fa-utensils mr-2 text-green-400"></i> Your table reservation (Table {{ reservation.table_number }}) will be confirmed once payment is verified. Please arrive within 30 minutes of your reservation time.</p>
                     </div>
 
+                    {% if reservation.status != 'CONFIRMED' %}
+                    <div class="bg-yellow-900/50 text-yellow-300 p-4 rounded-lg mb-6">
+                        <strong>Waiting for Manager Confirmation:</strong> Your reservation has not yet been confirmed by the manager. You will be able to pay once it is confirmed.
+                    </div>
+                    {% else %}
                     <form method="POST" action="{% url 'reservation_payment' reservation.id %}" enctype="multipart/form-data" class="mt-6">
                         {% csrf_token %}
 
@@ -228,6 +233,7 @@
                             </button>
                         </div>
                     </form>
+                    {% endif %}
                 </div>
             </div>
 

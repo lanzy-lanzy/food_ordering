@@ -51,8 +51,6 @@
         {% endfor %}
     </div>
 
-
-
     <!-- Reservations List -->
     <div class="card p-6 shadow-lg border border-gray-800">
         {% if reservations %}
@@ -61,7 +59,10 @@
                 <thead>
                     <tr class="text-left text-gray-400 border-b border-gray-800">
                         <th class="pb-3">Date & Time</th>
+                        <th class="pb-3">Table</th>
                         <th class="pb-3">Party Size</th>
+                        <th class="pb-3">Payment</th>
+                        <th class="pb-3">Menu Items</th>
                         <th class="pb-3">Status</th>
                         <th class="pb-3">Actions</th>
                     </tr>
@@ -70,32 +71,52 @@
                     {% for reservation in reservations %}
                     <tr class="border-b border-gray-800">
                         <td class="py-4 text-white font-medium">{{ reservation.date|date:"M d, Y" }} at {{ reservation.time|time:"H:i" }}</td>
+                        <td class="py-4 text-gray-400">
+                            {% if reservation.table_number %}
+                            Table {{ reservation.table_number }}
+                            {% else %}
+                            Not assigned
+                            {% endif %}
+                        </td>
                         <td class="py-4 text-gray-400">{{ reservation.party_size }} people</td>
                         <td class="py-4">
-                            {% if reservation.status == 'PENDING' %}
-                            <span class="bg-yellow-900 text-yellow-300 text-xs px-2 py-1 rounded-full">Pending</span>
-                            {% elif reservation.status == 'CONFIRMED' %}
-                            <span class="bg-green-900 text-green-300 text-xs px-2 py-1 rounded-full">Confirmed</span>
-                            {% elif reservation.status == 'CANCELLED' %}
-                            <span class="bg-red-900 text-red-300 text-xs px-2 py-1 rounded-full">Cancelled</span>
+                            <span class="bg-{% if reservation.payment_status == 'PAID' %}green{% elif reservation.payment_status == 'PARTIALLY_PAID' %}yellow{% else %}red{% endif %}-900 text-{% if reservation.payment_status == 'PAID' %}green{% elif reservation.payment_status == 'PARTIALLY_PAID' %}yellow{% else %}red{% endif %}-300 text-xs px-2 py-1 rounded-full">
+                                {{ reservation.get_payment_status_display }}
+                            </span>
+                            {% if reservation.payment_status != 'PAID' and reservation.status == 'CONFIRMED' %}
+                            <a href="{% url 'reservation_payment' reservation.id %}" class="ml-2 btn-primary btn-xs">Pay Now</a>
+                            {% elif reservation.status == 'PENDING' %}
+                            <span class="ml-2 text-yellow-300 text-xs">Waiting for manager confirmation</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-4 text-gray-400">
+                            {% if reservation.menu_items.exists %}
+                                <ul>
+                                    {% for item in reservation.menu_items.all %}
+                                    <li>{{ item.name }} x{{ item.quantity }}</li>
+                                    {% endfor %}
+                                </ul>
+                            {% else %}
+                                <span class="text-xs text-gray-500">None</span>
                             {% endif %}
                         </td>
                         <td class="py-4">
-                            <div class="flex space-x-2">
-                                <button class="view-reservation-btn text-gray-400 hover:text-food-gold transition duration-300"
-                                        data-reservation-id="{{ reservation.id }}" title="View Details">
-                                    <i class="fas fa-eye"></i>
-                                </button>
-
-                                {% if reservation.status == 'PENDING' %}
-                                <a href="{% url 'cancel_reservation' reservation.id %}"
-                                   class="text-gray-400 hover:text-red-500 transition duration-300"
-                                   title="Cancel Reservation"
-                                   onclick="return confirm('Are you sure you want to cancel this reservation?');">
-                                    <i class="fas fa-times"></i>
-                                </a>
-                                {% endif %}
-                            </div>
+                            <span class="bg-{% if reservation.status == 'COMPLETED' %}blue{% elif reservation.status == 'CONFIRMED' %}green{% elif reservation.status == 'PENDING' %}yellow{% else %}red{% endif %}-900 text-{% if reservation.status == 'COMPLETED' %}blue{% elif reservation.status == 'CONFIRMED' %}green{% elif reservation.status == 'PENDING' %}yellow{% else %}red{% endif %}-300 text-xs px-2 py-1 rounded-full">
+                                {{ reservation.get_status_display }}
+                            </span>
+                        </td>
+                        <td class="py-4">
+                            {% if reservation.status == 'PENDING' %}
+                                <a href="{% url 'cancel_reservation' reservation.id %}" class="btn-danger btn-xs">Cancel</a>
+                            {% elif reservation.status == 'CONFIRMED' and reservation.payment_status != 'PAID' %}
+                                <a href="{% url 'reservation_payment' reservation.id %}" class="btn-primary btn-xs">Pay Now</a>
+                            {% elif reservation.status == 'CONFIRMED' and reservation.payment_status == 'PAID' %}
+                                <span class="text-green-300 text-xs">Awaiting preparation</span>
+                            {% elif reservation.status == 'COMPLETED' %}
+                                <span class="text-blue-300 text-xs">Completed</span>
+                            {% elif reservation.status == 'CANCELLED' %}
+                                <span class="text-red-300 text-xs">Cancelled</span>
+                            {% endif %}
                         </td>
                     </tr>
                     {% endfor %}
@@ -103,18 +124,39 @@
             </table>
         </div>
         {% else %}
-        <div class="text-center py-8">
-            <div class="text-gray-500 text-5xl mb-4">
-                <i class="fas fa-calendar-alt"></i>
-            </div>
-            <h3 class="text-xl font-bold text-white mb-2">No Reservations Found</h3>
-            <p class="text-gray-400 mb-6">You don't have any reservations yet.</p>
-            <a href="{% url 'make_reservation' %}" class="btn-primary px-4 py-2 rounded-lg">
-                Make a Reservation
-            </a>
+        <div class="p-8 text-center text-gray-500">
+            <div class="text-5xl mb-4"><i class="far fa-calendar-check"></i></div>
+            <h3 class="text-xl font-medium text-gray-400 mb-2">No Reservations Found</h3>
+            <p>It looks like you have no reservations. Click \"New Reservation\" to get started.</p>
         </div>
         {% endif %}
     </div>
+
+    <!-- Timeline/Status Tracker -->
+    <div class="flex items-center justify-center mb-6">
+        <div class="flex items-center space-x-4">
+            <div class="flex flex-col items-center">
+                <div class="w-8 h-8 rounded-full flex items-center justify-center {% if reservation.status != 'PENDING' %}bg-green-500{% else %}bg-yellow-500{% endif %} text-white font-bold">1</div>
+                <span class="text-xs text-gray-300 mt-1">Requested</span>
+            </div>
+            <div class="w-8 border-t-2 {% if reservation.status != 'PENDING' %}border-green-500{% else %}border-yellow-500{% endif %}"></div>
+            <div class="flex flex-col items-center">
+                <div class="w-8 h-8 rounded-full flex items-center justify-center {% if reservation.status == 'CONFIRMED' or reservation.status == 'COMPLETED' %}bg-green-500{% else %}bg-gray-500{% endif %} text-white font-bold">2</div>
+                <span class="text-xs text-gray-300 mt-1">Confirmed</span>
+            </div>
+            <div class="w-8 border-t-2 {% if reservation.payment_status == 'PAID' %}border-green-500{% else %}border-gray-500{% endif %}"></div>
+            <div class="flex flex-col items-center">
+                <div class="w-8 h-8 rounded-full flex items-center justify-center {% if reservation.payment_status == 'PAID' %}bg-green-500{% else %}bg-gray-500{% endif %} text-white font-bold">3</div>
+                <span class="text-xs text-gray-300 mt-1">Paid</span>
+            </div>
+            <div class="w-8 border-t-2 {% if reservation.status == 'COMPLETED' %}border-green-500{% else %}border-gray-500{% endif %}"></div>
+            <div class="flex flex-col items-center">
+                <div class="w-8 h-8 rounded-full flex items-center justify-center {% if reservation.status == 'COMPLETED' %}bg-green-500{% else %}bg-gray-500{% endif %} text-white font-bold">4</div>
+                <span class="text-xs text-gray-300 mt-1">Completed</span>
+            </div>
+        </div>
+    </div>
+
 </div>
 
 <!-- Reservation Details Modal -->
@@ -504,9 +546,13 @@
                 // Find the reservation in the table
                 const row = document.querySelector(`[data-reservation-id="${reservationId}"]`).closest('tr');
                 const dateTime = row.cells[0].textContent;
-                const partySize = row.cells[1].textContent;
-                const status = row.cells[2].querySelector('span').textContent;
-                const statusClass = row.cells[2].querySelector('span').className;
+                const table = row.cells[1].textContent;
+                const partySize = row.cells[2].textContent;
+                const payment = row.cells[3].querySelector('span').textContent;
+                const paymentClass = row.cells[3].querySelector('span').className;
+                const menuItems = row.cells[4].textContent;
+                const status = row.cells[5].querySelector('span').textContent;
+                const statusClass = row.cells[5].querySelector('span').className;
 
                 reservationDetailsContent.innerHTML = `
                     <div class="mb-4 pb-4 border-b border-gray-800">
@@ -523,6 +569,7 @@
                         <div>
                             <h4 class="text-white font-bold mb-2">Reservation Details</h4>
                             <p class="text-gray-400">Date & Time: ${dateTime}</p>
+                            <p class="text-gray-400">Table: ${table}</p>
                             <p class="text-gray-400">Party Size: ${partySize}</p>
                         </div>
                         <div>
@@ -530,6 +577,17 @@
                             <p class="text-gray-400">Name: {{ request.user.get_full_name }}</p>
                             <p class="text-gray-400">Email: {{ request.user.email }}</p>
                             <p class="text-gray-400">Phone: {{ request.user.customer_profile.phone }}</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <h4 class="text-white font-bold mb-2">Payment Status</h4>
+                            <p class="text-gray-400">Status: <span class="${paymentClass}">${payment}</span></p>
+                        </div>
+                        <div>
+                            <h4 class="text-white font-bold mb-2">Menu Items</h4>
+                            <p class="text-gray-400">${menuItems.trim() === 'None' ? 'No menu items ordered' : menuItems}</p>
                         </div>
                     </div>
 

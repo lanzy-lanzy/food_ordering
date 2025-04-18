@@ -35,13 +35,17 @@
         background-color: rgba(239, 68, 68, 0.2);
         color: #EF4444;
     }
+    .status-badge.completed {
+        background-color: rgba(79, 70, 229, 0.2);
+        color: #818CF8;
+    }
 </style>
 {% endblock extra_css %}
 
 {% block content %}
 <div class="space-y-8">
     <!-- Stats Overview -->
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+    <div class="grid grid-cols-1 md:grid-cols-5 gap-6">
         <div class="stat-card p-6 rounded-lg">
             <div class="flex items-center justify-between">
                 <div>
@@ -81,6 +85,18 @@
         <div class="stat-card p-6 rounded-lg">
             <div class="flex items-center justify-between">
                 <div>
+                    <h3 class="text-gray-400 text-sm font-medium">Completed</h3>
+                    <p class="text-2xl font-bold mt-1 text-indigo-400">{{ completed_reservations }}</p>
+                </div>
+                <div class="bg-indigo-900 p-3 rounded-full">
+                    <i class="fas fa-check-double text-indigo-400 text-xl"></i>
+                </div>
+            </div>
+        </div>
+
+        <div class="stat-card p-6 rounded-lg">
+            <div class="flex items-center justify-between">
+                <div>
                     <h3 class="text-gray-400 text-sm font-medium">Cancelled</h3>
                     <p class="text-2xl font-bold mt-1 text-red-400">{{ cancelled_reservations }}</p>
                 </div>
@@ -98,6 +114,7 @@
             <div class="flex space-x-2">
                 <span class="status-badge pending">{{ today_pending }} Pending</span>
                 <span class="status-badge confirmed">{{ today_confirmed }} Confirmed</span>
+                <span class="status-badge completed">{{ today_completed }} Completed</span>
             </div>
         </div>
 
@@ -129,6 +146,8 @@
                             <span class="status-badge pending">Pending</span>
                             {% elif reservation.status == 'CONFIRMED' %}
                             <span class="status-badge confirmed">Confirmed</span>
+                            {% elif reservation.status == 'COMPLETED' %}
+                            <span class="status-badge completed">Completed</span>
                             {% elif reservation.status == 'CANCELLED' %}
                             <span class="status-badge cancelled">Cancelled</span>
                             {% endif %}
@@ -177,6 +196,53 @@
         {% endif %}
     </div>
 
+    <!-- Streamline actionable pending reservations table for managers -->
+    <div class="card p-6 mt-8">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold">Pending Reservations</h2>
+        </div>
+        {% if pending_reservations_qs %}
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead>
+                    <tr class="text-left text-gray-400 border-b border-gray-800">
+                        <th class="pb-3">Date & Time</th>
+                        <th class="pb-3">Guest</th>
+                        <th class="pb-3">Party Size</th>
+                        <th class="pb-3">Table</th>
+                        <th class="pb-3">Special Requests</th>
+                        <th class="pb-3">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for reservation in pending_reservations_qs %}
+                    <tr class="border-b border-gray-800">
+                        <td class="py-4 text-white font-medium">{{ reservation.date|date:"M d, Y" }} at {{ reservation.time|time:"H:i" }}</td>
+                        <td class="py-4 text-white">{{ reservation.name }}</td>
+                        <td class="py-4 text-white">{{ reservation.party_size }}</td>
+                        <td class="py-4 text-white">{{ reservation.table_number|default:'Not assigned' }}</td>
+                        <td class="py-4 text-gray-300">{{ reservation.special_requests|default:'-' }}</td>
+                        <td class="py-4">
+                            <form method="post" action="{% url 'update_reservation_status' reservation.id %}" class="inline">
+                                {% csrf_token %}
+                                <button name="action" value="confirm" class="btn-success btn-xs mr-2">Approve</button>
+                                <button name="action" value="reject" class="btn-danger btn-xs">Reject</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="p-8 text-center text-gray-500">
+            <div class="text-5xl mb-4"><i class="fas fa-calendar-times"></i></div>
+            <h3 class="text-xl font-medium text-gray-400 mb-2">No Pending Reservations</h3>
+            <p>All reservations have been reviewed.</p>
+        </div>
+        {% endif %}
+    </div>
+
     <!-- Upcoming Reservations Calendar -->
     <div class="card p-6">
         <h2 class="text-xl font-bold mb-4">Upcoming Reservations (Next 7 Days)</h2>
@@ -207,6 +273,10 @@
                     <div class="flex justify-between text-xs">
                         <span class="text-green-400">Confirmed:</span>
                         <span>{{ day_data.confirmed }}</span>
+                    </div>
+                    <div class="flex justify-between text-xs">
+                        <span class="text-indigo-400">Completed:</span>
+                        <span>{{ day_data.completed }}</span>
                     </div>
                 </div>
                 {% else %}
@@ -273,7 +343,10 @@
                         <th class="pb-3">Date & Time</th>
                         <th class="pb-3">Guest</th>
                         <th class="pb-3">Party Size</th>
+                        <th class="pb-3">Table</th>
                         <th class="pb-3">Contact</th>
+                        <th class="pb-3">Payment</th>
+                        <th class="pb-3">Menu Items</th>
                         <th class="pb-3">Status</th>
                         <th class="pb-3">Actions</th>
                     </tr>
@@ -285,14 +358,35 @@
                         <td class="py-4 text-white">{{ reservation.name }}</td>
                         <td class="py-4 text-gray-400">{{ reservation.party_size }} people</td>
                         <td class="py-4 text-gray-400">
+                            {% if reservation.table_number %}
+                            Table {{ reservation.table_number }}
+                            {% else %}
+                            Not assigned
+                            {% endif %}
+                        </td>
+                        <td class="py-4 text-gray-400">
                             <div>{{ reservation.phone }}</div>
                             <div class="text-xs">{{ reservation.email }}</div>
+                        </td>
+                        <td class="py-4">
+                            <span class="status-badge {% if reservation.payment_status == 'PAID' %}confirmed{% elif reservation.payment_status == 'PARTIALLY_PAID' %}pending{% else %}cancelled{% endif %}">
+                                {{ reservation.get_payment_status_display }}
+                            </span>
+                        </td>
+                        <td class="py-4 text-gray-400">
+                            {% if reservation.total_amount > 0 %}
+                            <span class="text-food-gold font-medium">₱{{ reservation.total_amount }}</span>
+                            {% else %}
+                            <span class="text-gray-500">None</span>
+                            {% endif %}
                         </td>
                         <td class="py-4">
                             {% if reservation.status == 'PENDING' %}
                             <span class="status-badge pending">Pending</span>
                             {% elif reservation.status == 'CONFIRMED' %}
                             <span class="status-badge confirmed">Confirmed</span>
+                            {% elif reservation.status == 'COMPLETED' %}
+                            <span class="status-badge completed">Completed</span>
                             {% elif reservation.status == 'CANCELLED' %}
                             <span class="status-badge cancelled">Cancelled</span>
                             {% endif %}

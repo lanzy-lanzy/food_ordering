@@ -15,11 +15,11 @@
                 <h2 class="text-xl font-bold mb-1">Reservation #{{ reservation.id }}</h2>
                 <p class="text-gray-400">{{ reservation.date|date:"F d, Y" }} at {{ reservation.time|time:"H:i" }}</p>
             </div>
-            <span class="px-3 py-1 rounded-full bg-yellow-900 text-yellow-300 text-sm font-medium">
-                Confirmed
+            <span class="px-3 py-1 rounded-full {% if reservation.status == 'COMPLETED' %}bg-blue-900 text-blue-300{% elif reservation.status == 'CONFIRMED' %}bg-green-900 text-green-300{% elif reservation.status == 'PENDING' %}bg-yellow-900 text-yellow-300{% else %}bg-red-900 text-red-300{% endif %} text-sm font-medium">
+                {{ reservation.get_status_display }}
             </span>
         </div>
-        
+
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <div>
                 <h3 class="text-lg font-medium mb-3">Guest Information</h3>
@@ -38,7 +38,7 @@
                     </div>
                 </div>
             </div>
-            
+
             <div>
                 <h3 class="text-lg font-medium mb-3">Reservation Details</h3>
                 <div class="space-y-2">
@@ -63,16 +63,58 @@
                 </div>
             </div>
         </div>
-        
+
         {% if reservation.special_requests %}
         <div class="mb-6">
             <h3 class="text-lg font-medium mb-3">Special Requests</h3>
             <div class="bg-gray-800 p-4 rounded-lg">
-                <p class="text-gray-300">{{ reservation.special_requests }}</p>
+                <p class="text-gray-300">{{ reservation.special_requests|linebreaks }}</p>
             </div>
         </div>
         {% endif %}
-        
+
+        {% if reservation.total_amount > 0 %}
+        <div class="mb-6">
+            <h3 class="text-lg font-medium mb-3">Pre-ordered Menu Items</h3>
+            <div class="bg-gray-800 p-4 rounded-lg">
+                <p class="text-gray-300 mb-2">The customer has pre-ordered menu items with this reservation.</p>
+                <div class="flex justify-between items-center">
+                    <span class="text-white font-bold">Total Amount:</span>
+                    <span class="text-food-gold font-bold text-xl">₱{{ reservation.total_amount }}</span>
+                </div>
+                <div class="mt-2">
+                    <p class="text-gray-400 text-sm">These items will be automatically added to the order when you process this reservation.</p>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="mb-6">
+            <h3 class="text-lg font-medium mb-3">Payment Information</h3>
+            <div class="bg-gray-800 p-4 rounded-lg">
+                <div class="flex justify-between items-center mb-3">
+                    <span class="text-white">Payment Status:</span>
+                    <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full {% if reservation.payment_status == 'PAID' %}bg-green-900 text-green-300{% elif reservation.payment_status == 'PARTIALLY_PAID' %}bg-yellow-900 text-yellow-300{% else %}bg-red-900 text-red-300{% endif %}">
+                        {{ reservation.get_payment_status_display }}
+                    </span>
+                </div>
+                {% if reservation.payment_status != 'PAID' %}
+                <div class="text-yellow-300 text-xs mt-2">Payment must be completed before processing this reservation.</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="flex justify-end">
+            {% if reservation.payment_status == 'PAID' %}
+            <form method="POST">
+                {% csrf_token %}
+                <button type="submit" class="btn-success">Mark as Completed</button>
+            </form>
+            {% else %}
+            <button class="btn-secondary cursor-not-allowed opacity-50" disabled>Mark as Completed</button>
+            {% endif %}
+        </div>
+
         <form method="post" class="mt-6">
             {% csrf_token %}
             <div class="flex justify-between">
