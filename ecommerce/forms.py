@@ -1,7 +1,7 @@
 from django import forms
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
-from .models import CustomerProfile, Order, Payment, Reservation, ReservationPayment
+from .models import CustomerProfile, Order, Payment, Reservation, ReservationPayment, MenuItem
 from django.utils import timezone
 
 class RegistrationForm(UserCreationForm):
@@ -202,3 +202,12 @@ class ReservationForm(forms.ModelForm):
                 print(f"Time validation failed: Current time: {current_time.time()}, Buffer time: {buffer_time.time()}, Selected time: {time}")
 
         return cleaned_data
+
+
+class AddMenuItemsToReservationForm(forms.Form):
+    menu_items = forms.ModelMultipleChoiceField(
+        queryset=MenuItem.objects.filter(is_available=True),
+        widget=forms.CheckboxSelectMultiple,
+        required=True,
+        help_text="Select menu items to add to this reservation."
+    )

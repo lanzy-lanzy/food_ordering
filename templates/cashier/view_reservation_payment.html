@@ -79,10 +79,7 @@
                     <h3 class="font-bold mb-4 text-white">Verification Actions</h3>
 
                     <div class="flex flex-col md:flex-row space-y-3 md:space-y-0 md:space-x-3">
-                        <form method="POST" class="w-full md:w-auto">
-                            {% csrf_token %}
-                            <button type="submit" name="action" value="verify" class="btn-success w-full md:w-auto">Verify and Complete</button>
-                        </form>
+                        <a href="{% url 'verify_reservation_payment' payment.id %}" class="btn-success w-full md:w-auto text-center">Verify and Complete</a>
                         <button type="button" onclick="openRejectModal()" class="btn-danger w-full md:w-auto">Reject Payment</button>
                     </div>
                     <div class="text-xs text-gray-400 mt-4">Please verify payment details and proof before proceeding. Mark as verified to complete the process or reject if invalid.</div>

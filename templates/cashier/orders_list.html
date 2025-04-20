@@ -9,6 +9,45 @@
 
 {% block content %}
 <div class="space-y-8">
+    <!-- Completed Sales Summary Widget -->
+    <div class="card p-6 bg-gradient-to-r from-green-900/30 to-food-gold/10 border border-green-700 mb-6 shadow-lg hover:shadow-xl transition-all duration-300">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center">
+            <div>
+                <h2 class="text-xl font-bold text-green-400 flex items-center mb-3">
+                    <i class="fas fa-cash-register mr-2 text-food-gold"></i>Today's Completed Sales
+                </h2>
+                <div class="flex flex-col space-y-1 mb-3 md:mb-0">
+                    <div class="text-3xl font-bold text-green-300">{{ completed_sales_total|currency }}</div>
+                    <div class="text-md text-green-200 flex items-center">
+                        <i class="fas fa-shopping-cart mr-2 text-food-gold-light"></i>
+                        Orders: <span class="font-bold ml-1">{{ completed_orders_count|default:'0' }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex flex-col space-y-2 bg-gray-800/50 p-4 rounded-lg border border-gray-700 w-full md:w-auto">
+                <div class="text-sm font-medium text-gray-300 mb-1">Sales Breakdown</div>
+                <div class="flex items-center justify-between gap-4">
+                    <div class="text-xs text-gray-400">Completed Orders:</div>
+                    <div class="text-xs font-medium text-green-300">{{ completed_orders_sales|currency }}</div>
+                </div>
+                <div class="flex items-center justify-between gap-4">
+                    <div class="text-xs text-gray-400">Verified Payments:</div>
+                    <div class="text-xs font-medium text-blue-300">{{ verified_payments_sales|currency }}</div>
+                </div>
+                <div class="flex items-center justify-between gap-4">
+                    <div class="text-xs text-gray-400">Reservations:</div>
+                    <div class="text-xs font-medium text-purple-300">{{ reservation_payments_sales|currency }}</div>
+                </div>
+                <div class="h-px bg-gray-700 my-1"></div>
+                <div class="flex items-center justify-between gap-4">
+                    <div class="text-xs font-medium text-gray-300">Total:</div>
+                    <div class="text-xs font-bold text-food-gold">{{ completed_sales_total|currency }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Filters -->
     <div class="card p-6" x-data="{showAdvancedFilters: false}">
         <div class="flex justify-between items-center mb-4">
@@ -46,8 +85,13 @@
 
                 <div>
                     <label for="q" class="block text-sm font-medium text-gray-400 mb-2">Search</label>
-                    <input type="text" name="q" id="q" value="{{ search_query }}" placeholder="Order #, customer name..."
-                           class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-food-gold">
+                    <div class="relative">
+                        <input type="text" name="q" id="q" value="{{ search_query }}" placeholder="Order #, customer name..."
+                               class="w-full px-3 py-2 pl-10 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-food-gold">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i class="fas fa-search text-gray-400"></i>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -101,14 +145,14 @@
                 </div>
             </div>
 
-            <div class="flex flex-wrap gap-2">
-                <button type="submit" class="px-4 py-2 bg-food-gold hover:bg-food-gold-light text-white rounded-lg transition duration-200">
+            <div class="flex flex-wrap gap-3 mt-6">
+                <button type="submit" class="px-4 py-2 bg-food-gold hover:bg-food-gold-light text-gray-900 rounded-lg transition duration-200 font-bold shadow-lg">
                     <i class="fas fa-filter mr-2"></i> Apply Filters
                 </button>
-                <a href="{% url 'cashier_orders_list' %}" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition duration-200">
+                <a href="{% url 'cashier_orders_list' %}" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition duration-200 shadow-lg">
                     <i class="fas fa-times mr-2"></i> Clear Filters
                 </a>
-                <a href="{% url 'new_order' %}" class="ml-auto px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition duration-200">
+                <a href="{% url 'new_order' %}" class="ml-auto px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition duration-200 font-bold shadow-lg">
                     <i class="fas fa-plus mr-2"></i> New Order
                 </a>
             </div>
@@ -178,7 +222,7 @@
                     </thead>
                     <tbody>
                         {% for order in orders %}
-                        <tr class="border-b border-gray-800 hover:bg-gray-800">
+                        <tr class="border-b border-gray-800 hover:bg-gray-800 {% if order.status == 'COMPLETED' %}bg-green-900/20 border-green-600 font-bold animate-pulse{% endif %}">
                             <td class="py-3 pl-3">
                                 <input type="checkbox" name="selected_orders" value="{{ order.id }}" class="order-checkbox form-checkbox h-4 w-4 text-food-gold rounded border-gray-600 bg-gray-700">
                             </td>
@@ -221,7 +265,11 @@
                                     <a href="{% url 'view_order' order.id %}" class="text-food-gold hover:text-food-gold-light" title="View Order">
                                         <i class="fas fa-eye"></i>
                                     </a>
-
+                                    {% if order.status == 'COMPLETED' %}
+                                    <a href="#" class="text-blue-400 hover:text-blue-600" title="Print Receipt">
+                                        <i class="fas fa-receipt"></i>
+                                    </a>
+                                    {% endif %}
                                     <div class="dropdown relative" x-data="{open: false}">
                                         <button @click="open = !open" class="text-gray-400 hover:text-white" title="More Actions">
                                             <i class="fas fa-ellipsis-v"></i>
@@ -256,8 +304,19 @@
             </div>
         </form>
         {% else %}
-        <div class="bg-gray-800 rounded-lg p-6 text-center">
-            <p class="text-gray-400">No orders found matching your criteria.</p>
+        <div class="bg-gray-800 rounded-lg p-8 text-center">
+            <div class="flex flex-col items-center justify-center space-y-4">
+                <div class="text-gray-500 text-5xl mb-2">
+                    <i class="fas fa-search"></i>
+                </div>
+                <h3 class="text-xl font-semibold text-gray-300">No Orders Found</h3>
+                <p class="text-gray-400 max-w-md">No orders match your current filter criteria. Try adjusting your filters or create a new order.</p>
+                <div class="mt-4">
+                    <a href="{% url 'new_order' %}" class="px-4 py-2 bg-food-gold hover:bg-food-gold-light text-gray-900 rounded-lg transition duration-200 font-bold shadow-lg inline-flex items-center">
+                        <i class="fas fa-plus mr-2"></i> Create New Order
+                    </a>
+                </div>
+            </div>
         </div>
         {% endif %}
     </div>
@@ -381,13 +440,46 @@
 
     // Show notification
     function showNotification(message, type = 'info') {
-        // This would typically use a toast notification library
-        // For now, we'll use a simple alert
+        // Create a toast notification
+        const toast = document.createElement('div');
+        toast.className = `fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg z-50 transition-all duration-300 transform translate-y-full opacity-0`;
+
+        // Set background color based on type
         if (type === 'error') {
-            alert(`Error: ${message}`);
+            toast.classList.add('bg-red-600', 'text-white');
+            message = `Error: ${message}`;
+        } else if (type === 'success') {
+            toast.classList.add('bg-green-600', 'text-white');
         } else {
-            alert(message);
+            toast.classList.add('bg-blue-600', 'text-white');
         }
+
+        // Add icon based on type
+        let icon = 'info-circle';
+        if (type === 'error') icon = 'exclamation-circle';
+        if (type === 'success') icon = 'check-circle';
+
+        toast.innerHTML = `
+            <div class="flex items-center">
+                <i class="fas fa-${icon} mr-3"></i>
+                <span>${message}</span>
+            </div>
+        `;
+
+        document.body.appendChild(toast);
+
+        // Animate in
+        setTimeout(() => {
+            toast.classList.remove('translate-y-full', 'opacity-0');
+        }, 10);
+
+        // Animate out and remove after 3 seconds
+        setTimeout(() => {
+            toast.classList.add('translate-y-full', 'opacity-0');
+            setTimeout(() => {
+                document.body.removeChild(toast);
+            }, 300);
+        }, 3000);
     }
 </script>
 {% endblock extra_scripts %}

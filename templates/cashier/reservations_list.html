@@ -11,18 +11,46 @@
     <!-- Filters -->
     <div class="card p-4">
         <div class="flex flex-wrap items-center justify-between gap-4">
-            <div class="flex items-center space-x-4">
+            <div class="flex flex-wrap items-center gap-2">
                 <a href="{% url 'cashier_reservations_list' %}?status=all"
                    class="px-4 py-2 rounded-lg {% if status_filter == 'all' %}bg-food-gold text-white{% else %}bg-gray-700 text-gray-300 hover:bg-gray-600{% endif %} transition duration-300">
-                    All Reservations
+                    <i class="fas fa-list mr-1"></i> All Reservations
                 </a>
                 <a href="{% url 'cashier_reservations_list' %}?status=unprocessed"
-                   class="px-4 py-2 rounded-lg {% if status_filter == 'unprocessed' %}bg-food-gold text-white{% else %}bg-gray-700 text-gray-300 hover:bg-gray-600{% endif %} transition duration-300">
-                    Unprocessed
+                   class="px-4 py-2 rounded-lg {% if status_filter == 'unprocessed' %}bg-green-600 text-white{% else %}bg-gray-700 text-gray-300 hover:bg-gray-600{% endif %} transition duration-300">
+                    <i class="fas fa-utensils mr-1"></i> Ready for Preparation
+                </a>
+                <a href="{% url 'cashier_reservations_list' %}?status=confirmed"
+                   class="px-4 py-2 rounded-lg {% if status_filter == 'confirmed' %}bg-blue-600 text-white{% else %}bg-gray-700 text-gray-300 hover:bg-gray-600{% endif %} transition duration-300">
+                    <i class="fas fa-check-circle mr-1"></i> Confirmed
+                </a>
+                <a href="{% url 'cashier_reservations_list' %}?status=completed"
+                   class="px-4 py-2 rounded-lg {% if status_filter == 'completed' %}bg-purple-600 text-white{% else %}bg-gray-700 text-gray-300 hover:bg-gray-600{% endif %} transition duration-300">
+                    <i class="fas fa-check-double mr-1"></i> Completed
                 </a>
             </div>
-            <div class="text-gray-400">
-                <span>{{ today|date:"F d, Y" }}</span>
+            <div class="flex items-center space-x-4">
+                <form method="get" class="flex items-center space-x-2">
+                    <input type="hidden" name="status" value="{{ status_filter }}">
+                    <select name="date_filter" class="bg-gray-700 border border-gray-600 rounded-lg py-1 px-2 text-white text-sm">
+                        <option value="today_and_future" {% if request.GET.date_filter == 'today_and_future' or not request.GET.date_filter %}selected{% endif %}>Today & Future</option>
+                        <option value="specific_date" {% if request.GET.date_filter == 'specific_date' %}selected{% endif %}>Specific Date</option>
+                        <option value="all" {% if request.GET.date_filter == 'all' %}selected{% endif %}>All Dates</option>
+                    </select>
+                    <input type="date" name="date" value="{{ today|date:'Y-m-d' }}" class="bg-gray-700 border border-gray-600 rounded-lg py-1 px-2 text-white text-sm">
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-lg text-sm">
+                        <i class="fas fa-filter mr-1"></i> Apply Filter
+                    </button>
+                </form>
+                <div class="text-gray-400 flex items-center">
+                    <i class="far fa-calendar-alt mr-2"></i>
+                    <span>{{ today|date:"F d, Y" }}</span>
+                </div>
+
+                <a href="{% url 'preparation_tracker' %}" class="bg-food-gold hover:bg-food-gold-light text-gray-900 px-3 py-1 rounded-lg text-sm font-bold">
+                    <i class="fas fa-tasks mr-1"></i> Preparation Tracker
+                </a>
+
             </div>
         </div>
     </div>
@@ -50,8 +78,7 @@
                 </thead>
                 <tbody class="divide-y divide-gray-800">
                     {% for reservation in reservations %}
-                    {% if reservation.status == 'CONFIRMED' or reservation.status == 'UNPROCESSED' %}
-                    <tr class="hover:bg-gray-800 transition-colors duration-200">
+                    <tr class="hover:bg-gray-800 transition-colors duration-200 {% if reservation.status == 'CONFIRMED' and reservation.payment_status != 'UNPAID' %}bg-green-900/20{% elif reservation.status == 'COMPLETED' %}bg-blue-900/20{% endif %}">
                         <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-white">
                             {{ reservation.time|time:"H:i" }}
                         </td>
@@ -73,8 +100,23 @@
                             <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full {% if reservation.payment_status == 'PAID' %}bg-green-900 text-green-300{% elif reservation.payment_status == 'PARTIALLY_PAID' %}bg-yellow-900 text-yellow-300{% else %}bg-red-900 text-red-300{% endif %}">
                                 {{ reservation.get_payment_status_display }}
                             </span>
+                            {% if reservation.payment and reservation.payment.id %}
                             {% if reservation.payment_status != 'PAID' and reservation.status == 'CONFIRMED' %}
-                            <a href="{% url 'verify_reservation_payment' reservation.id %}" class="ml-2 btn-primary btn-xs">Verify Payment</a>
+                                {% if reservation.payment_status == 'PARTIALLY_PAID' %}
+                                    <a href="{% url 'cashier_mark_prepared' reservation.id %}" class="btn-warning btn-xs flex items-center justify-center">
+                                        <i class="fas fa-utensils mr-1"></i> Mark as Prepared
+                                        <span class="ml-1 text-xs">(Deposit Only)</span>
+                                    </a>
+                                {% else %}
+                                    {% if reservation.payment and reservation.payment.id %}
+                                        <a href="{% url 'verify_reservation_payment' reservation.payment.id %}" class="btn-danger btn-xs flex items-center justify-center">
+                                            <i class="fas fa-cash-register mr-1"></i> Verify Payment
+                                        </a>
+                                    {% else %}
+                                        <span class="text-xs text-red-400">Payment required</span>
+                                    {% endif %}
+                                {% endif %}
+                            {% endif %}
                             {% endif %}
                         </td>
                         <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-300">
@@ -85,7 +127,8 @@
                                     {% endfor %}
                                 </ul>
                             {% else %}
-                                <span class="text-xs text-gray-500">None</span>
+                                <span class="text-xs text-yellow-300">No menu items added</span>
+                                <a href="{% url 'cashier_add_menu_items_to_reservation' reservation.id %}" class="ml-2 btn-primary btn-xs">Add Order</a>
                             {% endif %}
                         </td>
                         <td class="px-4 py-4 whitespace-nowrap text-sm">
@@ -94,12 +137,37 @@
                             </span>
                         </td>
                         <td class="px-4 py-4 whitespace-nowrap text-sm">
-                            {% if reservation.status == 'CONFIRMED' and reservation.payment_status == 'PAID' %}
-                                <a href="{% url 'cashier_mark_prepared' reservation.id %}" class="btn-success btn-xs">Mark as Prepared</a>
+                            {% if reservation.status == 'CONFIRMED' %}
+                                {% if reservation.payment_status == 'PAID' %}
+                                    <div class="flex space-x-2">
+                                        <a href="{% url 'cashier_mark_prepared' reservation.id %}" class="btn-success btn-xs flex items-center justify-center">
+                                            <i class="fas fa-utensils mr-1"></i> Mark as Prepared
+                                        </a>
+                                        <a href="{% url 'preparation_tracker' %}" class="btn-blue btn-xs flex items-center justify-center">
+                                            <i class="fas fa-tasks mr-1"></i> Track
+                                        </a>
+                                    </div>
+                                {% elif reservation.payment_status == 'PARTIALLY_PAID' %}
+                                    <a href="{% url 'cashier_mark_prepared' reservation.id %}" class="btn-warning btn-xs flex items-center justify-center">
+                                        <i class="fas fa-utensils mr-1"></i> Mark as Prepared
+                                        <span class="ml-1 text-xs">(Deposit Only)</span>
+                                    </a>
+                                {% else %}
+                                    {% if reservation.payment and reservation.payment.id %}
+                                        <a href="{% url 'verify_reservation_payment' reservation.payment.id %}" class="btn-danger btn-xs flex items-center justify-center">
+                                            <i class="fas fa-cash-register mr-1"></i> Verify Payment
+                                        </a>
+                                    {% else %}
+                                        <span class="text-xs text-red-400">Payment required</span>
+                                    {% endif %}
+                                {% endif %}
+                            {% elif reservation.status == 'COMPLETED' %}
+                                <span class="text-xs text-green-400 flex items-center">
+                                    <i class="fas fa-check-circle mr-1"></i> Prepared
+                                </span>
                             {% endif %}
                         </td>
                     </tr>
-                    {% endif %}
                     {% endfor %}
                 </tbody>
             </table>
@@ -108,7 +176,20 @@
         <div class="p-8 text-center text-gray-500">
             <div class="text-5xl mb-4"><i class="far fa-calendar-check"></i></div>
             <h3 class="text-xl font-medium text-gray-400 mb-2">No Reservations Found</h3>
-            <p>There are no reservations to process at this time.</p>
+            <p class="mb-4">There are no reservations to process at this time.</p>
+
+            <div class="bg-blue-900/30 p-4 rounded-lg border border-blue-800 max-w-lg mx-auto text-left">
+                <p class="text-gray-300 flex items-start mb-2">
+                    <i class="fas fa-info-circle mr-2 text-blue-400 mt-1"></i>
+                    <span>If you've just verified a reservation payment, try the following:</span>
+                </p>
+                <ul class="text-gray-300 list-disc pl-8 space-y-1">
+                    <li>Make sure "Today & Future" is selected in the date filter</li>
+                    <li>Select the "Ready for Preparation" filter at the top</li>
+                    <li>If the reservation is for a specific date, select "Specific Date" and enter that date</li>
+                    <li>Check that the reservation status was updated to "CONFIRMED" after payment verification</li>
+                </ul>
+            </div>
         </div>
         {% endif %}
     </div>

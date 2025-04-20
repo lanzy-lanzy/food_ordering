@@ -8,6 +8,7 @@ from django.http import JsonResponse, HttpResponseRedirect
 from decimal import Decimal, InvalidOperation
 from django.contrib.auth.models import User
 from django.urls import reverse
+from datetime import datetime
 
 from .models import Order, OrderItem, MenuItem, StaffActivity, Payment, Refund, Reservation, Category, ReservationPayment
 
@@ -41,7 +42,7 @@ def cashier_dashboard(request):
 
     # Get pending orders (not completed or cancelled)
     pending_orders = today_orders.filter(
-        status__in=['PENDING', 'PROCESSING', 'READY']
+        status__in=['PENDING', 'PREPARING', 'READY']
     )
 
     # Get completed orders
@@ -63,20 +64,61 @@ def cashier_dashboard(request):
         date=today
     ).order_by('-processed_at')
 
-    # Calculate today's sales
-    today_sales = completed_orders.aggregate(
+    # Calculate today's sales - include all completed orders and verified payments
+    # First get sales from completed orders
+    completed_orders_sales = completed_orders.aggregate(
         total=Sum('total_amount')
     )['total'] or 0
 
-    # Calculate today's order count
-    today_order_count = completed_orders.count()
+    # Then get sales from verified payments for orders that aren't completed yet
+    verified_payments_sales = Payment.objects.filter(
+        status='COMPLETED',
+        verification_date__date=today,
+        order__status__in=['PENDING', 'PREPARING', 'READY']
+    ).aggregate(
+        total=Sum('amount')
+    )['total'] or 0
+
+    # Add reservation payments that have been verified today
+    reservation_payments_sales = ReservationPayment.objects.filter(
+        status='COMPLETED',
+        verification_date__date=today
+    ).aggregate(
+        total=Sum('amount')
+    )['total'] or 0
+
+    # Total sales is the sum of all three
+    today_sales = completed_orders_sales + verified_payments_sales + reservation_payments_sales
+
+    # Calculate today's order count - include all orders with verified payments
+    # Count completed orders
+    completed_orders_count = completed_orders.count()
+
+    # Count orders with verified payments that aren't completed yet
+    # Use the reverse relationship from Order to Payment
+    verified_payment_orders_count = Order.objects.filter(
+        created_at__date=today,
+        status__in=['PENDING', 'PREPARING', 'READY'],
+        payments__status='COMPLETED',
+        payments__verification_date__date=today
+    ).distinct().count()
+
+    # Total order count is the sum of both
+    today_order_count = completed_orders_count + verified_payment_orders_count
 
     # Calculate average order value
     avg_order_value = today_sales / today_order_count if today_order_count > 0 else 0
 
-    # Get most ordered items today
+    # Get most ordered items today - include items from all orders with verified payments
+    # Get orders with verified payments (both completed and in-progress)
+    orders_with_payments = Order.objects.filter(
+        Q(status='COMPLETED', created_at__date=today) |
+        Q(payments__status='COMPLETED', payments__verification_date__date=today)
+    ).distinct()
+
+    # Get top items from these orders
     top_items = OrderItem.objects.filter(
-        order__in=completed_orders
+        order__in=orders_with_payments
     ).values(
         'menu_item__name'
     ).annotate(
@@ -110,7 +152,13 @@ def cashier_dashboard(request):
         'top_items': top_items,
         'pending_payments': pending_payments,
         'unprocessed_reservations_count': unprocessed_reservations.count(),
-        'active_section': 'cashier_dashboard'
+        'active_section': 'cashier_dashboard',
+        # Detailed sales breakdown
+        'completed_orders_sales': completed_orders_sales,
+        'verified_payments_sales': verified_payments_sales,
+        'reservation_payments_sales': reservation_payments_sales,
+        'completed_orders_count': completed_orders_count,
+        'verified_payment_orders_count': verified_payment_orders_count
     }
 
     return render(request, 'cashier/dashboard.html', context)
@@ -168,6 +216,17 @@ def new_order(request):
                 price = menu_item.price
                 total_amount += price * quantity
 
+            # Validate cash on hand for dine-in orders
+            if order_type == 'DINE_IN':
+                try:
+                    cash_amount = Decimal(cash_on_hand)
+                except Exception:
+                    messages.error(request, 'Invalid cash amount entered.')
+                    return redirect('new_order')
+                if cash_amount < total_amount:
+                    messages.error(request, 'Cash on hand is less than the order total.')
+                    return redirect('new_order')
+
             # Set default payment status and order status based on order type
             payment_status = 'PAID' if order_type == 'DINE_IN' else 'UNPAID'
             payment_method = 'CASH_ON_HAND' if order_type == 'DINE_IN' else 'PENDING'
@@ -219,21 +278,11 @@ def new_order(request):
                 except (ValueError, TypeError):
                     order.split_ways = 2
 
-                # Save the order with the updated dine-in fields
                 order.save()
 
                 # Create a payment record for dine-in orders
                 try:
-                    cash_amount = Decimal(cash_on_hand)
-                    change_amount = cash_amount - total_amount if cash_amount > total_amount else Decimal('0.00')
-
-                    # Save cash and change amounts to the order
-                    order.cash_on_hand = cash_amount
-                    order.change_amount = change_amount
-                    order.save()
-
-                    payment_notes = f'Cash payment: ₱{cash_amount}. Change: ₱{change_amount}'
-
+                    change_amount = Decimal(cash_on_hand) - total_amount if Decimal(cash_on_hand) > total_amount else Decimal('0.00')
                     Payment.objects.create(
                         order=order,
                         amount=total_amount,
@@ -242,20 +291,11 @@ def new_order(request):
                         verified_by=request.user,
                         verification_date=timezone.now(),
                         reference_number=f'CASH-{order.id}',
-                        notes=payment_notes
+                        notes=f'Cash payment: ₱{cash_on_hand}. Change: ₱{change_amount}'
                     )
-                except (ValueError, InvalidOperation):
-                    # Fallback if cash_on_hand is not a valid decimal
-                    Payment.objects.create(
-                        order=order,
-                        amount=total_amount,
-                        payment_method='CASH_ON_HAND',
-                        status='COMPLETED',
-                        verified_by=request.user,
-                        verification_date=timezone.now(),
-                        notes='Automatic payment record for dine-in order'
-                    )
-
+                    messages.success(request, f"Order #{order.id} created successfully. Change: ₱{change_amount:.2f}")
+                except Exception as e:
+                    messages.error(request, f"Error recording payment: {str(e)}")
             # Add order items
             for i in range(len(item_ids)):
                 item_id = item_ids[i]
@@ -284,19 +324,6 @@ def new_order(request):
                 ip_address=get_client_ip(request)
             )
 
-            # Show success message with change information for dine-in orders
-            if order_type == 'DINE_IN':
-                try:
-                    cash_amount = Decimal(cash_on_hand)
-                    change_amount = cash_amount - total_amount if cash_amount > total_amount else Decimal('0.00')
-                    if change_amount > 0:
-                        messages.success(request, f'Order #{order.id} created successfully. Change: ₱{change_amount:.2f}')
-                    else:
-                        messages.success(request, f'Order #{order.id} created successfully')
-                except (ValueError, InvalidOperation):
-                    messages.success(request, f'Order #{order.id} created successfully')
-            else:
-                messages.success(request, f'Order #{order.id} created successfully')
             return redirect('view_order', order_id=order.id)
 
         except Exception as e:
@@ -586,6 +613,43 @@ def orders_list(request):
         ip_address=get_client_ip(request)
     )
 
+    # Calculate today's completed sales for the summary widget
+    today = timezone.now().date()
+
+    # Get completed orders for today
+    completed_orders = Order.objects.filter(
+        status='COMPLETED',
+        created_at__date=today
+    )
+
+    # Calculate completed orders sales total
+    completed_orders_sales = completed_orders.aggregate(
+        total=Sum('total_amount')
+    )['total'] or 0
+
+    # Add verified payments for today (excluding completed orders to avoid double counting)
+    verified_payments_sales = Payment.objects.filter(
+        status='COMPLETED',
+        verification_date__date=today,
+        order__status__in=['PENDING', 'PREPARING', 'READY']
+    ).aggregate(
+        total=Sum('amount')
+    )['total'] or 0
+
+    # Add reservation payments for today
+    reservation_payments_sales = ReservationPayment.objects.filter(
+        status='COMPLETED',
+        verification_date__date=today
+    ).aggregate(
+        total=Sum('amount')
+    )['total'] or 0
+
+    # Total sales is the sum of all three
+    today_total_sales = completed_orders_sales + verified_payments_sales + reservation_payments_sales
+
+    # Count of completed orders today
+    completed_orders_count = completed_orders.count()
+
     context = {
         'orders': orders,
         'status_filter': status_filter,
@@ -599,7 +663,16 @@ def orders_list(request):
         'max_amount': max_amount,
         'sort_by': sort_by,
         'status_choices': Order.STATUS_CHOICES,
-        'active_section': 'orders'
+        'active_section': 'orders',
+        # Add sales summary data
+        'completed_sales_total': today_total_sales,
+        'completed_orders_count': completed_orders_count,
+        'completed_orders_sales': completed_orders_sales,
+        'verified_payments_sales': verified_payments_sales,
+        'reservation_payments_sales': reservation_payments_sales,
+        'order_types': Order.ORDER_TYPE_CHOICES,
+        'payment_statuses': Order.PAYMENT_STATUS_CHOICES,
+        'payment_methods': Order.PAYMENT_METHOD_CHOICES
     }
 
     return render(request, 'cashier/orders_list.html', context)
@@ -761,7 +834,12 @@ def verify_payment(request, payment_id):
         # Update order status
         order = payment.order
         order.payment_status = 'PAID'
-        order.status = 'PREPARING'  # Move to preparing status
+
+        # Only update status if it's still pending
+        if order.status == 'PENDING':
+            order.status = 'PREPARING'  # Move to preparing status
+            order.preparing_at = timezone.now()
+
         order.save()
 
         # Log activity
@@ -984,25 +1062,59 @@ def cancel_order(request, order_id):
 @login_required
 def reservations_list(request):
     """View for cashiers to see and process confirmed reservations"""
-    today = timezone.now().date()
+    # Get date from query parameters or use today's date
+    date_str = request.GET.get('date')
+    if date_str:
+        try:
+            # Parse the date from the query parameter
+            selected_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            # If invalid date format, use today's date
+            selected_date = timezone.now().date()
+    else:
+        # Default to today's date
+        selected_date = timezone.now().date()
 
-    # Get confirmed and completed reservations for today
-    reservations = Reservation.objects.filter(
-        status__in=['CONFIRMED', 'COMPLETED'],
-        date=today
-    ).order_by('time')
+    # Get all reservations
+    reservations = Reservation.objects.all().order_by('time')
 
-    # Filter by processed status if requested
+    # Get the date filter mode
+    date_filter_mode = request.GET.get('date_filter', 'today_and_future')
+
+    # Apply date filter based on mode
+    if date_filter_mode == 'specific_date':
+        # Filter by the specific selected date
+        reservations = reservations.filter(date=selected_date)
+    elif date_filter_mode == 'today_and_future':
+        # Show today and future reservations (default)
+        reservations = reservations.filter(date__gte=timezone.now().date())
+    elif date_filter_mode == 'all':
+        # Show all reservations regardless of date
+        pass
+    else:
+        # Default to today and future if invalid mode
+        reservations = reservations.filter(date__gte=timezone.now().date())
+
+    # Filter by status if requested
     status_filter = request.GET.get('status', 'all')
     if status_filter == 'unprocessed':
-        reservations = reservations.filter(is_processed=False)
-    elif status_filter == 'processed':
-        reservations = reservations.filter(is_processed=True)
+        # Show confirmed reservations that need preparation
+        reservations = reservations.filter(status='CONFIRMED')
+    elif status_filter == 'confirmed':
+        # Show all confirmed reservations
+        reservations = reservations.filter(status='CONFIRMED')
+    elif status_filter == 'completed':
+        # Show completed reservations
+        reservations = reservations.filter(status='COMPLETED')
+    elif status_filter == 'pending':
+        # Show pending reservations
+        reservations = reservations.filter(status='PENDING')
+    # 'all' shows all reservations for the selected date
 
     context = {
         'reservations': reservations,
         'status_filter': status_filter,
-        'today': today,
+        'today': selected_date,
         'active_section': 'reservations_list'
     }
 
@@ -1194,6 +1306,14 @@ def view_reservation_payment(request, payment_id):
     """View details of a reservation payment"""
     payment = get_object_or_404(ReservationPayment, id=payment_id)
 
+    # If the form is submitted with action=verify, redirect to verify_reservation_payment
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'verify':
+            return redirect('verify_reservation_payment', payment_id=payment_id)
+        elif action == 'reject':
+            return redirect('reject_reservation_payment', payment_id=payment_id)
+
     context = {
         'payment': payment,
         'active_section': 'pending_reservation_payments'
@@ -1226,7 +1346,33 @@ def verify_reservation_payment(request, payment_id):
                 for old_payment in other_pending_payments:
                     old_payment.delete()
 
+            # Update the reservation status to CONFIRMED
             reservation = payment.reservation
+            reservation.status = 'CONFIRMED'
+
+            # Update payment status based on payment type
+            if payment.payment_type == 'FULL':
+                reservation.payment_status = 'PAID'
+            else:
+                # Calculate total paid amount
+                total_paid = ReservationPayment.objects.filter(
+                    reservation=reservation,
+                    status='COMPLETED'
+                ).aggregate(total=Sum('amount'))['total'] or 0
+
+                # If total paid equals or exceeds the total amount, mark as PAID
+                if total_paid >= reservation.total_amount:
+                    reservation.payment_status = 'PAID'
+                else:
+                    reservation.payment_status = 'PARTIALLY_PAID'
+
+            # Save the reservation with updated status
+            reservation.save()
+
+            # Log the status change for debugging
+            print(f"Updated reservation #{reservation.id} status to {reservation.status} and payment_status to {reservation.payment_status}")
+
+            # Check if there are any existing orders for this reservation
             orders = Order.objects.filter(
                 table_number=reservation.table_number,
                 number_of_guests=reservation.party_size,
@@ -1271,16 +1417,27 @@ def verify_reservation_payment(request, payment_id):
                 action='VERIFY_RESERVATION_PAYMENT',
                 details=f"Verified payment of ₱{payment.amount} for Reservation #{reservation.id}"
             )
+            # Create the URL with appropriate parameters
+            reservations_url = reverse("cashier_reservations_list") + "?status=unprocessed&date_filter=today_and_future"
+
+            # Use the messages.success with the safe filter in the template
             messages.success(request, f'Payment for Reservation #{reservation.id} has been verified successfully!')
+
+            # Add a second message with the action button that will be rendered with the safe filter
+            messages.info(request, f'<a href="{reservations_url}" class="btn-primary px-4 py-2 rounded-lg inline-flex items-center"><i class="fas fa-clipboard-list mr-2"></i> Go to Reservations</a>')
             return redirect('pending_reservation_payments')
         elif action == 'reject':
-            # Implement rejection logic here if needed
-            messages.info(request, 'Payment rejection not implemented yet.')
-            return redirect('pending_reservation_payments')
+            return redirect('reject_reservation_payment', payment_id=payment_id)
         else:
             messages.error(request, 'Invalid action.')
             return redirect('view_reservation_payment', payment_id=payment_id)
-    return render(request, 'cashier/view_reservation_payment.html', {'payment': payment})
+
+    # If it's a GET request, show the verification form
+    context = {
+        'payment': payment,
+        'active_section': 'pending_reservation_payments'
+    }
+    return render(request, 'cashier/verify_reservation_payment.html', context)
 
 
 @login_required
@@ -1298,6 +1455,24 @@ def reject_reservation_payment(request, payment_id):
         payment.verification_date = timezone.now()
         payment.save()
 
+        # Update the reservation status if needed
+        reservation = payment.reservation
+        if reservation.status == 'PENDING':
+            # Keep it as pending if it was pending before
+            pass
+        elif reservation.payment_status == 'UNPAID':
+            # If no other payments exist, ensure reservation stays in pending state
+            other_completed_payments = ReservationPayment.objects.filter(
+                reservation=reservation,
+                status='COMPLETED'
+            ).exists()
+
+            if not other_completed_payments:
+                # No valid payments, so keep reservation as pending
+                reservation.status = 'PENDING'
+                reservation.payment_status = 'UNPAID'
+                reservation.save(update_fields=['status', 'payment_status'])
+
         # Log the activity
         StaffActivity.objects.create(
             staff=request.user,
@@ -1308,17 +1483,70 @@ def reject_reservation_payment(request, payment_id):
         messages.success(request, f'Payment for Reservation #{payment.reservation.id} has been rejected.')
         return redirect('pending_reservation_payments')
 
-    return redirect('view_reservation_payment', payment_id=payment_id)
+    # If not a POST request, show the rejection form
+    context = {
+        'payment': payment,
+        'active_section': 'pending_reservation_payments'
+    }
+    return render(request, 'cashier/reject_reservation_payment.html', context)
 
 @login_required
 def cashier_mark_prepared(request, reservation_id):
     """Mark a reservation as prepared (for kitchen/cashier workflow)"""
-    from ecommerce.models import Reservation
+    from ecommerce.models import Reservation, StaffActivity
     reservation = get_object_or_404(Reservation, id=reservation_id)
     if reservation.status == 'CONFIRMED':
         reservation.status = 'COMPLETED'  # Or 'PREPARED' if you have such a status
         reservation.save(update_fields=['status'])
-        messages.success(request, f'Reservation #{reservation.id} marked as prepared.')
+
+        # Log the activity
+        StaffActivity.objects.create(
+            staff=request.user,
+            action='MARK_RESERVATION_PREPARED',
+            details=f"Marked Reservation #{reservation.id} as prepared for {reservation.name}, party of {reservation.party_size}"
+        )
+
+        messages.success(request, f'Reservation #{reservation.id} for {reservation.name} has been marked as prepared and is ready to be served.')
     else:
-        messages.warning(request, f'Reservation #{reservation.id} cannot be marked as prepared.')
+        messages.warning(request, f'Reservation #{reservation.id} cannot be marked as prepared. It must be in CONFIRMED status.')
     return redirect('cashier_reservations_list')
+
+
+@login_required
+def preparation_tracker(request):
+    """View for tracking preparation progress of reservations and orders"""
+    from ecommerce.models import Reservation, Order
+    from django.db.models import Count
+
+    # Get today's date
+    today = timezone.now().date()
+
+    # Get all reservations for today and future dates
+    reservations = Reservation.objects.filter(
+        date__gte=today,
+        status__in=['CONFIRMED', 'COMPLETED']
+    ).order_by('date', 'time')
+
+    # Get all orders that are in progress
+    orders = Order.objects.filter(
+        status__in=['PENDING', 'PROCESSING', 'READY', 'COMPLETED'],
+        created_at__date=today
+    ).order_by('-created_at')
+
+    # Calculate statistics
+    total_preparations = reservations.count() + orders.count()
+    in_progress_count = reservations.filter(status='CONFIRMED').count() + orders.filter(status='PROCESSING').count()
+    ready_count = orders.filter(status='READY').count()
+    completed_today = reservations.filter(status='COMPLETED').count() + orders.filter(status='COMPLETED').count()
+
+    context = {
+        'reservations': reservations,
+        'orders': orders,
+        'total_preparations': total_preparations,
+        'in_progress_count': in_progress_count,
+        'ready_count': ready_count,
+        'completed_today': completed_today,
+        'active_section': 'preparation_tracker'
+    }
+
+    return render(request, 'cashier/preparation_tracker.html', context)

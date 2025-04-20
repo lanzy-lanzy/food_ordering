@@ -173,7 +173,7 @@
         <div class="info">
             <div>Table: {{ order.table_number|default:'-' }}</div>
             <div>Party Size: {{ order.party_size }}</div>
-            <div>Status: <span style="font-weight:bold; color:{% if order.status == 'PAID' %}green{% else %}red{% endif %};">{{ order.get_status_display }}</span></div>
+            <div>Status: <span style="font-weight:bold; color:{% if order.status == 'PENDING' %}orange{% elif order.status == 'PAID' or order.status == 'COMPLETED' %}green{% elif order.status == 'CANCELLED' %}red{% elif order.status == 'READY' %}blue{% elif order.status == 'PREPARING' %}purple{% else %}black{% endif %};">{{ order.get_status_display }}</span></div>
         </div>
         <div class="divider"></div>
         <table class="items">
@@ -181,14 +181,17 @@
                 <tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr>
             </thead>
             <tbody>
-                {% for item in order.items.all %}
+                {% with total=0 %}
+                {% for item in order.order_items.all %}
                 <tr>
                     <td>{{ item.menu_item.name }}</td>
                     <td>{{ item.quantity }}</td>
                     <td>₱{{ item.price|floatformat:2 }}</td>
-                    <td>₱{{ item.get_total_price|floatformat:2 }}</td>
+                    <td>₱{{ item.subtotal|floatformat:2 }}</td>
                 </tr>
+                {% with total=total|add:item.subtotal %}{% endwith %}
                 {% endfor %}
+                {% endwith %}
             </tbody>
         </table>
         <div class="divider"></div>
@@ -199,10 +202,12 @@
             <div style="margin-top:5px;">This is your official receipt.</div>
             <div style="margin-top:5px;">For inquiries: +1 (234) 567-890</div>
         </div>
-        {% if order.status == 'PAID' %}
+        {% if order.status == 'PAID' or order.status == 'COMPLETED' %}
         <div style="text-align:center; font-size:16px; font-weight:bold; color:green; margin-top:10px;">PAID</div>
+        {% elif order.status == 'CANCELLED' %}
+        <div style="text-align:center; font-size:16px; font-weight:bold; color:red; margin-top:10px;">CANCELLED</div>
         {% else %}
-        <div style="text-align:center; font-size:16px; font-weight:bold; color:red; margin-top:10px;">UNPAID</div>
+        <div style="text-align:center; font-size:16px; font-weight:bold; color:orange; margin-top:10px;">{{ order.get_status_display|upper }}</div>
         {% endif %}
         <div class="no-print">
             <button class="print-btn" onclick="window.print()">Print Receipt</button>

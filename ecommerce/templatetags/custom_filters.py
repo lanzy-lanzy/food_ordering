@@ -40,3 +40,16 @@ def sum_attr(items, attr):
 def js(value):
     """Pass through filter for JavaScript code"""
     return value
+
+@register.filter
+def is_step_active(order, step):
+    """Check if a step is active in the order progress"""
+    if order.status == step:
+        return True
+    if step == 'PAID' and hasattr(order, 'payment') and order.payment and order.payment.status == 'COMPLETED':
+        return True
+    if step == 'COMPLETED' and order.status == 'COMPLETED':
+        return True
+    if step == 'CANCELLED' and order.status == 'CANCELLED':
+        return True
+    return False

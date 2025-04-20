@@ -7,7 +7,8 @@ from .views import (
     edit_menu_item, delete_menu_item, edit_category, delete_category,
     customer_dashboard, my_orders, my_reviews, profile, change_password,
     make_reservation, reservation_payment, my_reservations, cancel_reservation, update_reservation_status,
-    customer_cancel_order, view_customer_order
+    customer_cancel_order, view_customer_order, track_preparation,
+    cashier_add_menu_items_to_reservation
 )
 from .admin import admin_dashboard
 from .inventory import (
@@ -24,7 +25,7 @@ from .cashier import (
     pending_payments, view_payment, verify_payment, reject_payment, record_payment,
     cancel_order, reservations_list as cashier_reservations_list, process_reservation,
     pending_reservation_payments, view_reservation_payment, verify_reservation_payment, reject_reservation_payment,
-    cashier_mark_prepared
+    cashier_mark_prepared, preparation_tracker
 )
 from .manager import (
     manager_dashboard, sales_report, inventory_overview,
@@ -58,6 +59,7 @@ urlpatterns = [
     path('customer/orders/', my_orders, name='my_orders'),
     path('customer/orders/<int:order_id>/', view_customer_order, name='view_customer_order'),
     path('customer/orders/<int:order_id>/cancel/', customer_cancel_order, name='customer_cancel_order'),
+    path('track/<str:tracking_type>/<int:tracking_id>/', track_preparation, name='track_preparation'),
     path('customer/reviews/', my_reviews, name='my_reviews'),
     path('customer/profile/', profile, name='profile'),
     path('customer/change-password/', change_password, name='change_password'),
@@ -135,6 +137,8 @@ urlpatterns = [
     path('cashier/reservations/', cashier_reservations_list, name='cashier_reservations_list'),
     path('cashier/reservations/<int:reservation_id>/process/', process_reservation, name='process_reservation'),
     path('cashier/reservation/<int:reservation_id>/mark-prepared/', cashier_mark_prepared, name='cashier_mark_prepared'),
+    path('cashier/preparation-tracker/', preparation_tracker, name='preparation_tracker'),
+    path('cashier/reservation/<int:reservation_id>/add-menu-items/', cashier_add_menu_items_to_reservation, name='cashier_add_menu_items_to_reservation'),
 
     # Cashier Reservation Payment Management
     path('cashier/reservation-payments/', pending_reservation_payments, name='pending_reservation_payments'),
