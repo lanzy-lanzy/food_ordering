@@ -4,6 +4,13 @@
 
 {% block title %}My Dashboard - 5th Avenue Grill and Restobar{% endblock title %}
 
+{% block extra_head %}
+<!-- HTMX for real-time updates -->
+<script src="https://unpkg.com/htmx.org@1.9.2"></script>
+{% endblock extra_head %}
+
+{% comment %}First extra_scripts block moved and merged with the one at the bottom{% endcomment %}
+
 {% block extra_css %}
 <style>
     .stat-card {
@@ -34,6 +41,22 @@
 
 {% block content %}
 <div class="space-y-8">
+    <!-- Real-time Dashboard Indicator -->
+    <div class="bg-gray-900/50 rounded-lg p-3 border border-gray-700 flex items-center justify-between">
+        <div class="flex items-center">
+            <div class="w-8 h-8 rounded-full bg-green-900/30 flex items-center justify-center text-green-400 mr-3 border border-green-500/30">
+                <i class="fas fa-sync-alt fa-spin"></i>
+            </div>
+            <div>
+                <h3 class="text-sm font-medium">Real-time Dashboard</h3>
+                <p class="text-xs text-gray-400">Data updates automatically</p>
+            </div>
+        </div>
+        <div class="text-xs text-gray-400 flex items-center">
+            <i class="fas fa-clock mr-2"></i>
+            <span id="last-updated">Last updated: <span id="update-time">{{ now|date:"g:i:s A" }}</span></span>
+        </div>
+    </div>
     <!-- Welcome Section -->
     <div class="bg-gradient-to-r from-gray-800 to-gray-900 rounded-lg p-6 shadow-lg border border-gray-700">
         <div class="flex items-center">
@@ -47,117 +70,69 @@
                 {% endif %}
             </div>
             <div>
-                <h1 class="text-2xl font-bold mb-1">Welcome back, {{ request.user.first_name|default:request.user.username }}!</h1>
+                <h1 class="text-2xl font-bold">Welcome back, {{ request.user.first_name|default:request.user.username }}!</h1>
                 <p class="text-gray-400">Manage your orders, reservations, reviews, and profile</p>
             </div>
         </div>
     </div>
 
-    <!-- Stats Grid -->
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div class="stat-card card-gradient-gold rounded-lg p-6 shadow-lg">
-            <div class="flex items-center justify-between mb-4">
-                <h2 class="text-lg font-bold">Total Orders</h2>
-                <div class="w-10 h-10 rounded-full bg-food-gold/20 flex items-center justify-center text-food-gold">
-                    <i class="fas fa-shopping-bag"></i>
+    <!-- Active Orders/Reservations Banner -->
+    {% if has_active_orders or has_active_reservations %}
+    <div class="bg-food-gold/20 border-l-4 border-food-gold rounded-lg p-4 shadow-lg pulse-animation">
+        <div class="flex items-start">
+            <div class="flex-shrink-0 pt-0.5">
+                <i class="fas fa-bell text-food-gold text-xl"></i>
+            </div>
+            <div class="ml-3 flex-1">
+                <h3 class="text-lg font-medium text-food-gold">Track Your Order/Reservation</h3>
+                <div class="mt-2 text-gray-300">
+                    <p>You have active orders or reservations that are being prepared. Track their progress in real-time!</p>
+                    <div class="mt-3 flex space-x-3">
+                        {% if has_active_orders %}
+                        <a href="{% url 'my_orders' %}" class="bg-food-gold hover:bg-food-gold-light text-gray-900 px-4 py-2 rounded-lg font-bold transition-colors duration-200">
+                            <i class="fas fa-shopping-bag mr-2"></i> Track Orders
+                        </a>
+                        {% endif %}
+                        {% if has_active_reservations %}
+                        <a href="{% url 'my_reservations' %}" class="bg-food-gold hover:bg-food-gold-light text-gray-900 px-4 py-2 rounded-lg font-bold transition-colors duration-200">
+                            <i class="fas fa-calendar-alt mr-2"></i> Track Reservations
+                        </a>
+                        {% endif %}
+                    </div>
                 </div>
             </div>
-            <div class="text-3xl font-bold">{{ total_orders }}</div>
-            <div class="text-gray-400 text-sm mt-2">Lifetime orders</div>
-        </div>
-
-        <div class="stat-card card-gradient-blue rounded-lg p-6 shadow-lg">
-            <div class="flex items-center justify-between mb-4">
-                <h2 class="text-lg font-bold">Total Spent</h2>
-                <div class="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-500">
-                    <i class="fas fa-peso-sign"></i>
-                </div>
-            </div>
-            <div class="text-3xl font-bold">{{ total_spent|currency }}</div>
-            <div class="text-gray-400 text-sm mt-2">Lifetime spending</div>
-        </div>
-
-        <div class="stat-card card-gradient-green rounded-lg p-6 shadow-lg">
-            <div class="flex items-center justify-between mb-4">
-                <h2 class="text-lg font-bold">Avg. Order</h2>
-                <div class="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center text-green-500">
-                    <i class="fas fa-chart-line"></i>
-                </div>
-            </div>
-            <div class="text-3xl font-bold">
-                {% if total_orders > 0 %}
-                {{ total_spent|div:total_orders|currency }}
-                {% else %}
-                ₱0.00
-                {% endif %}
-            </div>
-            <div class="text-gray-400 text-sm mt-2">Average order value</div>
-        </div>
-
-        <div class="stat-card card-gradient-purple rounded-lg p-6 shadow-lg">
-            <div class="flex items-center justify-between mb-4">
-                <h2 class="text-lg font-bold">Reviews</h2>
-                <div class="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-500">
-                    <i class="fas fa-star"></i>
-                </div>
-            </div>
-            <div class="text-3xl font-bold">{{ user_reviews|length }}</div>
-            <div class="text-gray-400 text-sm mt-2">Total reviews submitted</div>
         </div>
     </div>
+    {% endif %}
 
-    <!-- Recent Orders -->
-    <div class="bg-gradient-to-r from-gray-800 to-gray-900 rounded-lg p-6 shadow-lg border border-gray-700">
+    <!-- Stats Grid with Real-time Updates -->
+    <div id="stats-section" hx-get="{% url 'customer_dashboard' %}?section=stats" hx-trigger="every 10s" hx-swap="outerHTML">
+        {% include 'accounts/partials/dashboard_stats.html' %}
+    </div>
+
+    <!-- Recent Orders with Real-time Updates -->
+    <div class="bg-gradient-to-r from-gray-800 to-gray-900 rounded-lg p-6 shadow-lg border border-gray-700 hover:border-food-gold/30 transition-all duration-300">
         <div class="flex items-center justify-between mb-6">
             <div class="flex items-center">
-                <div class="w-8 h-8 rounded-full bg-food-gold/20 flex items-center justify-center text-food-gold mr-3">
+                <div class="w-10 h-10 rounded-full bg-food-gold/20 flex items-center justify-center text-food-gold mr-3 border border-food-gold/30">
                     <i class="fas fa-shopping-bag"></i>
                 </div>
                 <h2 class="text-xl font-bold">Recent Orders</h2>
+                <div class="ml-3 flex items-center">
+                    <span class="relative flex h-3 w-3">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-food-gold opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-3 w-3 bg-food-gold"></span>
+                    </span>
+                    <span class="ml-2 text-xs text-gray-400">Real-time updates</span>
+                </div>
             </div>
-            <a href="{% url 'my_orders' %}" class="text-food-gold hover:text-food-gold-light transition-colors duration-200 flex items-center">
+            <a href="{% url 'my_orders' %}" class="text-food-gold hover:text-food-gold-light transition-colors duration-200 flex items-center px-3 py-1 rounded-full border border-food-gold/30 hover:border-food-gold hover:bg-food-gold/10">
                 View All <i class="fas fa-arrow-right ml-2"></i>
             </a>
         </div>
 
-        <div class="space-y-4">
-            {% for order in recent_orders %}
-            <div class="bg-gray-800/50 hover:bg-gray-700/50 transition-colors duration-200 rounded-lg p-4 border border-gray-700 shadow-md">
-                <div class="flex justify-between items-start">
-                    <div>
-                        <div class="font-medium text-lg">Order #{{ order.id }}</div>
-                        <div class="text-sm text-gray-400 mt-1">{{ order.created_at|date:"M d, Y" }} at {{ order.created_at|time:"g:i A" }}</div>
-                        <div class="mt-2">
-                            <span class="px-2 py-1 rounded-full text-xs
-                                {% if order.status == 'PENDING' %}bg-yellow-900/70 text-yellow-300
-                                {% elif order.status == 'PREPARING' %}bg-blue-900/70 text-blue-300
-                                {% elif order.status == 'READY' %}bg-green-900/70 text-green-300
-                                {% elif order.status == 'COMPLETED' %}bg-gray-700/70 text-gray-300
-                                {% elif order.status == 'CANCELLED' %}bg-red-900/70 text-red-300{% endif %}">
-                                {{ order.get_status_display }}
-                            </span>
-                        </div>
-                    </div>
-                    <div class="text-right">
-                        <div class="font-bold text-xl">₱{{ order.total_amount|floatformat:2 }}</div>
-                        <div class="text-sm text-gray-400 mt-1">{{ order.order_items.count }} item(s)</div>
-                        <a href="{% url 'view_customer_order' order.id %}" class="text-food-gold hover:text-food-gold-light text-sm mt-2 inline-block transition-colors duration-200">
-                            View Details
-                        </a>
-                    </div>
-                </div>
-            </div>
-            {% empty %}
-            <div class="text-center py-8 text-gray-400 bg-gray-800/30 rounded-lg border border-gray-700">
-                <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-700/50 flex items-center justify-center">
-                    <i class="fas fa-shopping-cart text-gray-500 text-2xl"></i>
-                </div>
-                <p class="mb-2">You haven't placed any orders yet</p>
-                <a href="{% url 'menu' %}" class="text-food-gold hover:text-food-gold-light mt-2 inline-block px-4 py-2 border border-food-gold rounded-md transition-all duration-200 hover:bg-food-gold hover:text-gray-900">
-                    Browse Menu <i class="fas fa-arrow-right ml-2"></i>
-                </a>
-            </div>
-            {% endfor %}
+        <div id="orders-section" hx-get="{% url 'customer_dashboard' %}?section=orders" hx-trigger="every 5s" hx-swap="innerHTML">
+            {% include 'accounts/partials/dashboard_orders.html' %}
         </div>
     </div>
 
@@ -208,62 +183,29 @@
         </div>
     </div>
 
-    <!-- Recent Reviews -->
-    <div class="bg-gradient-to-r from-gray-800 to-gray-900 rounded-lg p-6 shadow-lg border border-gray-700">
+    <!-- Recent Reviews with Real-time Updates -->
+    <div class="bg-gradient-to-r from-gray-800 to-gray-900 rounded-lg p-6 shadow-lg border border-gray-700 hover:border-yellow-500/30 transition-all duration-300">
         <div class="flex items-center justify-between mb-6">
             <div class="flex items-center">
-                <div class="w-8 h-8 rounded-full bg-yellow-500/20 flex items-center justify-center text-yellow-500 mr-3">
+                <div class="w-10 h-10 rounded-full bg-yellow-500/20 flex items-center justify-center text-yellow-500 mr-3 border border-yellow-500/30">
                     <i class="fas fa-star"></i>
                 </div>
                 <h2 class="text-xl font-bold">Your Recent Reviews</h2>
+                <div class="ml-3 flex items-center">
+                    <span class="relative flex h-3 w-3">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-500 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-3 w-3 bg-yellow-500"></span>
+                    </span>
+                    <span class="ml-2 text-xs text-gray-400">Real-time updates</span>
+                </div>
             </div>
-            <a href="{% url 'my_reviews' %}" class="text-food-gold hover:text-food-gold-light transition-colors duration-200 flex items-center">
+            <a href="{% url 'my_reviews' %}" class="text-food-gold hover:text-food-gold-light transition-colors duration-200 flex items-center px-3 py-1 rounded-full border border-food-gold/30 hover:border-food-gold hover:bg-food-gold/10">
                 View All <i class="fas fa-arrow-right ml-2"></i>
             </a>
         </div>
 
-        <div class="space-y-4">
-            {% for review in user_reviews %}
-            <div class="bg-gray-800/50 hover:bg-gray-700/50 transition-colors duration-200 rounded-lg p-4 border border-gray-700 shadow-md">
-                <div class="flex items-center justify-between mb-3">
-                    <div class="flex items-center">
-                        {% if review.menu_item.image %}
-                        <img src="{{ review.menu_item.image.url }}" alt="{{ review.menu_item.name }}" class="w-12 h-12 rounded-lg object-cover mr-3 border border-gray-600">
-                        {% else %}
-                        <div class="w-12 h-12 rounded-lg bg-gray-700 flex items-center justify-center mr-3 border border-gray-600">
-                            <i class="fas fa-utensils text-gray-400"></i>
-                        </div>
-                        {% endif %}
-                        <div class="font-medium">{{ review.menu_item.name }}</div>
-                    </div>
-                    <div class="text-food-gold flex">
-                        {% for i in "12345"|make_list %}
-                        <i class="fas fa-star {% if forloop.counter <= review.rating %}text-food-gold{% else %}text-gray-600{% endif %} mx-0.5"></i>
-                        {% endfor %}
-                    </div>
-                </div>
-                <div class="bg-gray-900/30 p-3 rounded-lg border border-gray-700 mb-2">
-                    <p class="text-gray-300 text-sm italic">"{{ review.comment }}"</p>
-                </div>
-                <div class="flex justify-between items-center">
-                    <div class="text-sm text-gray-500">{{ review.created_at|date:"M d, Y" }}</div>
-                    <a href="#" class="text-food-gold hover:text-food-gold-light text-sm transition-colors duration-200">
-                        Edit Review
-                    </a>
-                </div>
-            </div>
-            {% empty %}
-            <div class="text-center py-8 text-gray-400 bg-gray-800/30 rounded-lg border border-gray-700">
-                <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-700/50 flex items-center justify-center">
-                    <i class="fas fa-comment-alt text-gray-500 text-2xl"></i>
-                </div>
-                <p class="mb-2">You haven't written any reviews yet</p>
-                <p class="text-sm text-gray-500 mb-4">Share your thoughts about the food you've tried</p>
-                <a href="{% url 'menu' %}" class="text-food-gold hover:text-food-gold-light mt-2 inline-block px-4 py-2 border border-food-gold rounded-md transition-all duration-200 hover:bg-food-gold hover:text-gray-900">
-                    Write a Review <i class="fas fa-pen ml-2"></i>
-                </a>
-            </div>
-            {% endfor %}
+        <div id="reviews-section" hx-get="{% url 'customer_dashboard' %}?section=reviews" hx-trigger="every 15s" hx-swap="innerHTML">
+            {% include 'accounts/partials/dashboard_reviews.html' %}
         </div>
     </div>
 
@@ -369,6 +311,33 @@
         animation: pulse-border 2s infinite;
     }
 </style>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Update timestamp when any HTMX request completes
+        document.body.addEventListener('htmx:afterSwap', function(event) {
+            updateTimestamp();
+        });
+
+        // Function to update the timestamp
+        function updateTimestamp() {
+            const now = new Date();
+            const hours = now.getHours() % 12 || 12;
+            const minutes = now.getMinutes().toString().padStart(2, '0');
+            const seconds = now.getSeconds().toString().padStart(2, '0');
+            const ampm = now.getHours() >= 12 ? 'PM' : 'AM';
+
+            const timeString = `${hours}:${minutes}:${seconds} ${ampm}`;
+            document.getElementById('update-time').textContent = timeString;
+
+            // Flash the timestamp to indicate update
+            const lastUpdated = document.getElementById('last-updated');
+            lastUpdated.classList.add('text-green-400');
+            setTimeout(() => {
+                lastUpdated.classList.remove('text-green-400');
+            }, 1000);
+        }
+    });
+</script>
 <script>
     // Global function to open the reservation modal
     function openReservationModal() {

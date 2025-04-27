@@ -71,6 +71,22 @@
             background-color: #FFBB4D;
         }
 
+        .btn-warning {
+            background-color: #F59E0B;
+            color: white;
+            transition: all 0.3s ease;
+        }
+
+        .btn-warning:hover {
+            background-color: #FBBF24;
+        }
+
+        .btn-xs {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.75rem;
+            border-radius: 0.25rem;
+        }
+
         /* Print styles */
         @media print {
             .no-print {
@@ -172,6 +188,22 @@
           {% endif %}
         </div>
         Reservations
+      </a>
+
+      <!-- Ready for Preparation -->
+      <a href="{% url 'cashier_reservations_list' %}?status=unprocessed&date_filter=today_and_future" class="group flex items-center px-2 py-2 text-base font-medium rounded-md text-gray-300 hover:text-white hover:bg-gray-700 mt-1 ml-6">
+        <div class="relative">
+          <i class="fas fa-utensils mr-3 h-6 w-6 text-gray-400 group-hover:text-white flex items-center justify-center"></i>
+        </div>
+        Ready for Preparation
+      </a>
+
+      <!-- Preparation Tracker -->
+      <a href="{% url 'preparation_tracker' %}" class="group flex items-center px-2 py-2 text-base font-medium rounded-md {% if active_section == 'preparation_tracker' %}text-white bg-gray-900{% else %}text-gray-300 hover:text-white hover:bg-gray-700{% endif %} mt-3">
+        <div class="relative">
+          <i class="fas fa-tasks mr-3 h-6 w-6 {% if active_section == 'preparation_tracker' %}text-white{% else %}text-gray-400 group-hover:text-white{% endif %} flex items-center justify-center"></i>
+        </div>
+        Preparation Tracker
       </a>
 
       <!-- Menu Items -->

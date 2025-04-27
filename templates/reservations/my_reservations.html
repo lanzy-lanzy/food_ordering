@@ -87,7 +87,8 @@
                                     {% endfor %}
                                 </ul>
                             {% else %}
-                                <span class="text-xs text-gray-500">None</span>
+                                <span class="text-xs text-yellow-300">No menu items added</span>
+                                <a href="{% url 'cashier_add_menu_items_to_reservation' reservation.id %}" class="ml-2 btn-primary btn-xs">Add Menu Items</a>
                             {% endif %}
                         </td>
                         <td class="py-4">
@@ -101,10 +102,21 @@
                             </span>
                         </td>
                         <td class="py-4">
-                            {% if reservation.status == 'CONFIRMED' and reservation.payment_status != 'PAID' %}
-                                <a href="{% url 'reservation_payment' reservation.id %}" class="btn-primary px-4 py-2 rounded-lg">Pay</a>
-                            {% else %}
-                                <button class="bg-gray-700 text-gray-400 px-4 py-2 rounded-lg cursor-not-allowed" disabled>Pay</button>
+                            {% if reservation.status == 'PENDING' %}
+                                <a href="{% url 'cancel_reservation' reservation.id %}" class="btn-danger btn-xs">Cancel</a>
+                            {% elif reservation.status == 'CONFIRMED' and reservation.payment_status != 'PAID' %}
+                                <a href="{% url 'reservation_payment' reservation.id %}" class="btn-primary btn-xs">Pay Now</a>
+                            {% elif reservation.status == 'CONFIRMED' and reservation.payment_status == 'PAID' %}
+                                <div class="flex flex-col space-y-2">
+                                    <span class="text-green-300 text-xs">Awaiting preparation</span>
+                                    <a href="{% url 'track_preparation' 'reservation' reservation.id %}" class="bg-food-gold hover:bg-food-gold-light text-gray-900 px-3 py-2 rounded-lg text-sm font-bold flex items-center justify-center pulse-animation">
+                                        <i class="fas fa-tasks mr-1"></i> Track Preparation
+                                    </a>
+                                </div>
+                            {% elif reservation.status == 'COMPLETED' %}
+                                <span class="text-blue-300 text-xs">Completed</span>
+                            {% elif reservation.status == 'CANCELLED' %}
+                                <span class="text-red-300 text-xs">Cancelled</span>
                             {% endif %}
                         </td>
                     </tr>

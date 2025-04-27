@@ -1451,7 +1451,37 @@ def customer_dashboard(request):
 
     # Calculate statistics
     total_orders = user_orders.count()
-    total_spent = user_orders.aggregate(models.Sum('total_amount'))['total_amount__sum'] or 0
+
+    # Get total spent from orders
+    orders_total = user_orders.aggregate(models.Sum('total_amount'))['total_amount__sum'] or 0
+
+    # Get total spent from reservations
+    user_reservations = Reservation.objects.filter(user=request.user, payment_status='PAID')
+    reservations_total = user_reservations.aggregate(models.Sum('total_amount'))['total_amount__sum'] or 0
+
+    # Calculate total spent from both orders and reservations
+    total_spent = orders_total + reservations_total
+
+    # Check if this is an HTMX request for partial updates
+    if request.headers.get('HX-Request'):
+        if request.GET.get('section') == 'stats':
+            # Return only the stats section for real-time updates
+            return render(request, 'accounts/partials/dashboard_stats.html', {
+                'total_orders': total_orders,
+                'total_spent': total_spent,
+                'orders_total': orders_total,
+                'reservations_total': reservations_total,
+            })
+        elif request.GET.get('section') == 'orders':
+            # Return only the recent orders section
+            return render(request, 'accounts/partials/dashboard_orders.html', {
+                'recent_orders': recent_orders,
+            })
+        elif request.GET.get('section') == 'reviews':
+            # Return only the reviews section
+            return render(request, 'accounts/partials/dashboard_reviews.html', {
+                'user_reviews': user_reviews,
+            })
 
     # Get favorite items (most ordered)
     favorite_items = MenuItem.objects.filter(
@@ -1465,17 +1495,34 @@ def customer_dashboard(request):
     menu_items = MenuItem.objects.filter(is_available=True)
     categories = Category.objects.filter(is_active=True)
 
+    # Check for active orders (preparing or ready)
+    has_active_orders = user_orders.filter(status__in=['PREPARING', 'READY']).exists()
+
+    # Check for active reservations (confirmed and paid)
+    has_active_reservations = Reservation.objects.filter(
+        user=request.user,
+        status='CONFIRMED',
+        payment_status='PAID'
+    ).exists()
+
     context = {
         'recent_orders': recent_orders,
         'user_reviews': user_reviews,
         'total_orders': total_orders,
         'total_spent': total_spent,
+        'orders_total': orders_total,
+        'reservations_total': reservations_total,
         'favorite_items': favorite_items,
         'active_section': 'dashboard',
         # Reservation modal data
         'occupied_tables': occupied_tables,
         'menu_items': menu_items,
-        'categories': categories
+        'categories': categories,
+        # Active orders/reservations flags
+        'has_active_orders': has_active_orders,
+        'has_active_reservations': has_active_reservations,
+        # Current time for real-time updates
+        'now': timezone.now()
     }
 
     return render(request, 'accounts/customer_dashboard.html', context)
@@ -1545,6 +1592,191 @@ def view_customer_order(request, order_id):
     }
 
     return render(request, 'accounts/view_customer_order.html', context)
+
+
+@login_required
+def reservation_feedback(request, reservation_id):
+    """Allow customers to provide feedback on their reservations"""
+    reservation = get_object_or_404(Reservation, id=reservation_id, user=request.user)
+
+    if request.method == 'POST':
+        rating = request.POST.get('rating')
+        comments = request.POST.get('comments')
+
+        # Save feedback to reservation (add fields or adjust as needed)
+        reservation.feedback = {
+            'rating': rating,
+            'comments': comments
+        }  # This assumes a JSONField or similar; adjust for your model
+        reservation.save()
+        messages.success(request, 'Thank you for your feedback!')
+        return redirect('my_reservations')
+
+    return render(request, 'reservations/reservation_feedback_form.html', {'reservation': reservation})
+
+
+def track_preparation(request, tracking_type, tracking_id):
+    """View for customers to track the preparation status of their order or reservation"""
+    from django.utils import timezone
+
+    # Require authentication for all tracking
+    if not request.user.is_authenticated:
+        messages.error(request, 'You must be logged in to track your order or reservation.')
+        return redirect('user_login')
+
+    # Initialize context variables
+    context = {
+        'order_type': 'Order' if tracking_type == 'order' else 'Reservation',
+        'order_id': tracking_id,
+        'status': 'UNKNOWN',
+        'progress_percentage': 0,
+        'steps': {
+            'order_received': False,
+            'preparation': False,
+            'quality_check': False,
+            'ready': False
+        },
+        'estimated_time': '15-20 minutes'
+    }
+
+    # Handle order tracking
+    if tracking_type == 'order':
+        try:
+            # Get the order and ensure it belongs to the current user
+            order = Order.objects.get(id=tracking_id)
+
+            # Strict security check - only allow the owner to view their order
+            if not (request.user.is_authenticated and order.user and order.user.id == request.user.id):
+                messages.error(request, 'You do not have permission to track this order.')
+                return redirect('my_orders')
+
+            # Set basic order information
+            context['customer_name'] = order.user.get_full_name() if order.user else order.customer_name or 'Guest'
+            context['table_number'] = order.table_number
+            context['order_date'] = order.created_at.date()
+            context['order_items'] = []
+
+            # Add order items
+            for item in order.order_items.all():
+                context['order_items'].append({
+                    'name': item.menu_item.name,
+                    'quantity': item.quantity,
+                    'price': item.price
+                })
+
+            # Set status and progress based on order status
+            context['status'] = order.status
+
+            if order.status == 'PENDING':
+                context['progress_percentage'] = 10
+                context['steps']['order_received'] = True
+                context['steps']['order_received_time'] = order.created_at.strftime('%I:%M %p')
+
+            elif order.status == 'PREPARING':
+                context['progress_percentage'] = 50
+                context['steps']['order_received'] = True
+                context['steps']['order_received_time'] = order.created_at.strftime('%I:%M %p')
+                context['steps']['preparation'] = True
+                context['steps']['preparation_time'] = (order.created_at + timezone.timedelta(minutes=5)).strftime('%I:%M %p')
+
+            elif order.status == 'READY':
+                context['progress_percentage'] = 90
+                context['steps']['order_received'] = True
+                context['steps']['order_received_time'] = order.created_at.strftime('%I:%M %p')
+                context['steps']['preparation'] = True
+                context['steps']['preparation_time'] = (order.created_at + timezone.timedelta(minutes=5)).strftime('%I:%M %p')
+                context['steps']['quality_check'] = True
+                context['steps']['quality_check_time'] = (order.created_at + timezone.timedelta(minutes=10)).strftime('%I:%M %p')
+                context['steps']['ready'] = True
+                context['steps']['ready_time'] = (order.created_at + timezone.timedelta(minutes=15)).strftime('%I:%M %p')
+
+            elif order.status == 'COMPLETED':
+                context['progress_percentage'] = 100
+                context['steps']['order_received'] = True
+                context['steps']['order_received_time'] = order.created_at.strftime('%I:%M %p')
+                context['steps']['preparation'] = True
+                context['steps']['preparation_time'] = (order.created_at + timezone.timedelta(minutes=5)).strftime('%I:%M %p')
+                context['steps']['quality_check'] = True
+                context['steps']['quality_check_time'] = (order.created_at + timezone.timedelta(minutes=10)).strftime('%I:%M %p')
+                context['steps']['ready'] = True
+                context['steps']['ready_time'] = (order.created_at + timezone.timedelta(minutes=15)).strftime('%I:%M %p')
+
+            # Calculate estimated time based on order status
+            if order.status == 'PENDING':
+                context['estimated_time'] = '15-20 minutes'
+            elif order.status == 'PREPARING':
+                context['estimated_time'] = '10-15 minutes'
+            elif order.status == 'READY' or order.status == 'COMPLETED':
+                context['estimated_time'] = 'Ready now!'
+            else:
+                context['estimated_time'] = 'Unknown'
+
+        except Order.DoesNotExist:
+            messages.error(request, 'Order not found.')
+            return redirect('my_orders')
+
+    # Handle reservation tracking
+    elif tracking_type == 'reservation':
+        try:
+            # Get the reservation and ensure it belongs to the current user
+            reservation = Reservation.objects.get(id=tracking_id)
+
+            # Strict security check - only allow the owner to view their reservation
+            if not (request.user.is_authenticated and reservation.user and reservation.user.id == request.user.id):
+                messages.error(request, 'You do not have permission to track this reservation.')
+                return redirect('my_reservations')
+
+            # Set basic reservation information
+            context['customer_name'] = reservation.name
+            context['party_size'] = reservation.party_size
+            context['table_number'] = reservation.table_number
+            context['reservation_time'] = reservation.time.strftime('%I:%M %p')
+            context['order_date'] = reservation.date
+
+            # Set status and progress based on reservation status
+            if reservation.status == 'PENDING':
+                context['status'] = 'PENDING'
+                context['progress_percentage'] = 10
+                context['steps']['order_received'] = True
+                context['steps']['order_received_time'] = reservation.created_at.strftime('%I:%M %p')
+                context['estimated_time'] = 'Waiting for confirmation'
+
+            elif reservation.status == 'CONFIRMED':
+                context['status'] = 'PROCESSING'
+                context['progress_percentage'] = 50
+                context['steps']['order_received'] = True
+                context['steps']['order_received_time'] = reservation.created_at.strftime('%I:%M %p')
+                context['steps']['preparation'] = True
+                context['steps']['preparation_time'] = 'In progress'
+                context['estimated_time'] = 'Ready by ' + reservation.time.strftime('%I:%M %p')
+
+            elif reservation.status == 'COMPLETED':
+                context['status'] = 'COMPLETED'
+                context['progress_percentage'] = 100
+                context['steps']['order_received'] = True
+                context['steps']['order_received_time'] = reservation.created_at.strftime('%I:%M %p')
+                context['steps']['preparation'] = True
+                context['steps']['preparation_time'] = 'Completed'
+                context['steps']['quality_check'] = True
+                context['steps']['quality_check_time'] = 'Completed'
+                context['steps']['ready'] = True
+                context['steps']['ready_time'] = 'Ready to serve'
+                context['estimated_time'] = 'Ready now!'
+
+            elif reservation.status == 'CANCELLED':
+                context['status'] = 'CANCELLED'
+                context['progress_percentage'] = 0
+                context['estimated_time'] = 'Cancelled'
+
+        except Reservation.DoesNotExist:
+            messages.error(request, 'Reservation not found.')
+            return redirect('home')
+
+    else:
+        messages.error(request, 'Invalid tracking type.')
+        return redirect('home')
+
+    return render(request, 'customer_preparation_tracker.html', context)
 
 
 @login_required
@@ -1684,3 +1916,26 @@ def admin_dashboard(request):
     }
 
     return render(request, 'admin/dashboard.html', context)
+
+
+@login_required
+@permission_required('ecommerce.change_reservation', raise_exception=True)
+def cashier_add_menu_items_to_reservation(request, reservation_id):
+    reservation = get_object_or_404(Reservation, id=reservation_id)
+
+    if request.method == 'POST':
+        form = AddMenuItemsToReservationForm(request.POST)
+        if form.is_valid():
+            menu_items = form.cleaned_data['menu_items']
+            for item in menu_items:
+                reservation.menu_items.add(item)
+            reservation.save()
+            messages.success(request, 'Menu items added to reservation successfully!')
+            return redirect('cashier_reservations_list')
+    else:
+        form = AddMenuItemsToReservationForm()
+
+    return render(request, 'cashier/add_menu_items_to_reservation.html', {
+        'reservation': reservation,
+        'form': form
+    })

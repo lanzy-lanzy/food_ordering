@@ -16,6 +16,11 @@
                 <div>
                     <h3 class="text-gray-400 text-sm font-medium">Today's Sales</h3>
                     <p class="text-2xl font-bold mt-1 text-green-400">{{ today_sales|currency }}</p>
+                    <div class="flex flex-col text-xs text-gray-500 mt-1">
+                        <span>Completed orders: {{ completed_orders_sales|currency }}</span>
+                        <span>Verified payments: {{ verified_payments_sales|currency }}</span>
+                        <span>Reservation payments: {{ reservation_payments_sales|currency }}</span>
+                    </div>
                 </div>
                 <div class="bg-green-900 p-3 rounded-full">
                     <i class="fas fa-peso-sign text-green-400 text-xl"></i>
@@ -26,8 +31,12 @@
         <div class="stat-card p-6 rounded-lg">
             <div class="flex items-center justify-between">
                 <div>
-                    <h3 class="text-gray-400 text-sm font-medium">Completed Orders</h3>
+                    <h3 class="text-gray-400 text-sm font-medium">Processed Orders</h3>
                     <p class="text-2xl font-bold mt-1">{{ today_order_count }}</p>
+                    <div class="flex flex-col text-xs text-gray-500 mt-1">
+                        <span>Completed: {{ completed_orders_count }}</span>
+                        <span>With verified payments: {{ verified_payment_orders_count }}</span>
+                    </div>
                 </div>
                 <div class="bg-blue-900 p-3 rounded-full">
                     <i class="fas fa-check-circle text-blue-400 text-xl"></i>
@@ -226,7 +235,7 @@
                         <td class="py-3">
                             {% if order.order_type == 'DINE_IN' %}
                             <span class="bg-blue-900 text-blue-300 text-xs px-2 py-1 rounded-full">Dine In</span>
-                            {% elif order.order_type == 'TAKEOUT' %}
+                            {% elif order.order_type == 'TAKEOUT' or order.order_type == 'PICKUP' %}
                             <span class="bg-green-900 text-green-300 text-xs px-2 py-1 rounded-full">Takeout</span>
                             {% elif order.order_type == 'DELIVERY' %}
                             <span class="bg-purple-900 text-purple-300 text-xs px-2 py-1 rounded-full">Delivery</span>
@@ -424,14 +433,14 @@
                         <td class="py-3">
                             {% if order.order_type == 'DINE_IN' %}
                             <span class="bg-blue-900 text-blue-300 text-xs px-2 py-1 rounded-full">Dine In</span>
-                            {% elif order.order_type == 'TAKEOUT' %}
+                            {% elif order.order_type == 'TAKEOUT' or order.order_type == 'PICKUP' %}
                             <span class="bg-green-900 text-green-300 text-xs px-2 py-1 rounded-full">Takeout</span>
                             {% elif order.order_type == 'DELIVERY' %}
                             <span class="bg-purple-900 text-purple-300 text-xs px-2 py-1 rounded-full">Delivery</span>
                             {% endif %}
                         </td>
                         <td class="py-3">{{ order.created_at|date:"H:i" }}</td>
-                        <td class="py-3">${{ order.total_amount }}</td>
+                        <td class="py-3">₱{{ order.total_amount }}</td>
                         <td class="py-3">
                             <div class="flex space-x-2">
                                 <a href="{% url 'view_order' order.id %}" class="text-food-gold hover:text-food-gold-light" title="View Order">

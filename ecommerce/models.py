@@ -386,8 +386,11 @@ class ReservationPayment(models.Model):
                 else:
                     reservation.payment_status = 'UNPAID'
 
-            # Remove auto-confirmation of reservation when paid
-            reservation.save(update_fields=['payment_status'])
+            # Update reservation status to CONFIRMED when payment is verified
+            reservation.status = 'CONFIRMED'
+
+            # Save the reservation with updated status and payment status
+            reservation.save(update_fields=['status', 'payment_status'])
 
 
 class OrderItem(models.Model):
