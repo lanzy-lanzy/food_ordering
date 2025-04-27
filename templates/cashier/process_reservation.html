@@ -105,13 +105,18 @@
         </div>
 
         <div class="flex justify-end">
-            {% if reservation.payment_status == 'PAID' %}
+            {% if reservation.status == 'CONFIRMED' and (reservation.payment_status == 'PAID' or reservation.payment_status == 'PARTIALLY_PAID') %}
             <form method="POST">
                 {% csrf_token %}
                 <button type="submit" class="btn-success">Mark as Completed</button>
             </form>
+            {% elif reservation.status == 'CONFIRMED' and reservation.payment_status != 'PAID' and reservation.payment_status != 'PARTIALLY_PAID' %}
+            <div class="bg-yellow-900/50 text-yellow-200 p-4 rounded-lg mb-6">
+                <i class="fas fa-exclamation-triangle mr-2"></i>
+                Cannot process reservation until payment is completed or at least partially paid.
+            </div>
             {% else %}
-            <button class="btn-secondary cursor-not-allowed opacity-50" disabled>Mark as Completed</button>
+            <button class="bg-gray-700 text-gray-400 px-4 py-2 rounded-lg cursor-not-allowed" disabled>Mark as Completed</button>
             {% endif %}
         </div>
 

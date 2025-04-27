@@ -986,9 +986,9 @@ def reservations_list(request):
     """View for cashiers to see and process confirmed reservations"""
     today = timezone.now().date()
 
-    # Get confirmed and completed reservations for today
+    # Get confirmed and completed reservations for today (only show CONFIRMED for cashier processing)
     reservations = Reservation.objects.filter(
-        status__in=['CONFIRMED', 'COMPLETED'],
+        status='CONFIRMED',
         date=today
     ).order_by('time')
 
@@ -1016,6 +1016,11 @@ def process_reservation(request, reservation_id):
     # Check if already processed
     if reservation.is_processed:
         messages.warning(request, f'Reservation #{reservation_id} has already been processed.')
+        return redirect('reservations_list')
+
+    # --- ENFORCE PAYMENT STATUS BEFORE PROCESSING ---
+    if reservation.payment_status not in ['PAID', 'PARTIALLY_PAID']:
+        messages.error(request, f'Reservation #{reservation_id} cannot be processed until payment is completed or at least partially paid.')
         return redirect('reservations_list')
 
     if request.method == 'POST':
@@ -1208,8 +1213,16 @@ def verify_reservation_payment(request, payment_id):
     payment = get_object_or_404(ReservationPayment, id=payment_id)
 
     if request.method == 'POST':
+        print(f"[DEBUG] POST received for payment_id={payment_id}")
         action = request.POST.get('action')
+        reservation = payment.reservation
+        print(f"[DEBUG] Action: {action}, Reservation Status: {reservation.status}")
+        if reservation.status != 'CONFIRMED':
+            print(f"[DEBUG] Blocked: Reservation not CONFIRMED")
+            messages.error(request, f'Reservation must be CONFIRMED before payment can be verified. Current status: {reservation.status}')
+            return redirect('view_reservation_payment', payment_id=payment_id)
         if action == 'verify':
+            print(f"[DEBUG] Verifying payment...")
             # Mark payment as completed
             payment.status = 'COMPLETED'
             payment.verified_by = request.user
@@ -1223,10 +1236,10 @@ def verify_reservation_payment(request, payment_id):
             ).exclude(id=payment.id)
 
             if other_pending_payments.exists():
+                print(f"[DEBUG] Cleaning up other pending payments...")
                 for old_payment in other_pending_payments:
                     old_payment.delete()
 
-            reservation = payment.reservation
             orders = Order.objects.filter(
                 table_number=reservation.table_number,
                 number_of_guests=reservation.party_size,
@@ -1234,6 +1247,7 @@ def verify_reservation_payment(request, payment_id):
             )
 
             if orders.exists():
+                print(f"[DEBUG] Updating order with payment...")
                 order = orders.first()
                 order.payment_method = 'GCASH'
                 if payment.payment_type == 'FULL':
@@ -1265,23 +1279,28 @@ def verify_reservation_payment(request, payment_id):
                     )
                 order.save(update_fields=['payment_method', 'payment_status', 'status'])
                 messages.success(request, f'Payment verified and order #{order.id} has been updated.')
+            else:
+                print(f"[DEBUG] No matching order found for reservation.")
 
             StaffActivity.objects.create(
                 staff=request.user,
                 action='VERIFY_RESERVATION_PAYMENT',
                 details=f"Verified payment of ₱{payment.amount} for Reservation #{reservation.id}"
             )
+            print(f"[DEBUG] Payment for Reservation #{reservation.id} verified successfully!")
             messages.success(request, f'Payment for Reservation #{reservation.id} has been verified successfully!')
             return redirect('pending_reservation_payments')
         elif action == 'reject':
+            print(f"[DEBUG] Reject action selected.")
             # Implement rejection logic here if needed
             messages.info(request, 'Payment rejection not implemented yet.')
             return redirect('pending_reservation_payments')
         else:
+            print(f"[DEBUG] Invalid action: {action}")
             messages.error(request, 'Invalid action.')
             return redirect('view_reservation_payment', payment_id=payment_id)
+    print(f"[DEBUG] Rendering view_reservation_payment.html for payment_id={payment_id}")
     return render(request, 'cashier/view_reservation_payment.html', {'payment': payment})
-
 
 @login_required
 def reject_reservation_payment(request, payment_id):

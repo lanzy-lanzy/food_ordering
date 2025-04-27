@@ -61,9 +61,9 @@
                         <th class="pb-3">Date & Time</th>
                         <th class="pb-3">Table</th>
                         <th class="pb-3">Party Size</th>
-                        <th class="pb-3">Payment</th>
                         <th class="pb-3">Menu Items</th>
                         <th class="pb-3">Status</th>
+                        <th class="pb-3">Payment</th>
                         <th class="pb-3">Actions</th>
                     </tr>
                 </thead>
@@ -79,16 +79,6 @@
                             {% endif %}
                         </td>
                         <td class="py-4 text-gray-400">{{ reservation.party_size }} people</td>
-                        <td class="py-4">
-                            <span class="bg-{% if reservation.payment_status == 'PAID' %}green{% elif reservation.payment_status == 'PARTIALLY_PAID' %}yellow{% else %}red{% endif %}-900 text-{% if reservation.payment_status == 'PAID' %}green{% elif reservation.payment_status == 'PARTIALLY_PAID' %}yellow{% else %}red{% endif %}-300 text-xs px-2 py-1 rounded-full">
-                                {{ reservation.get_payment_status_display }}
-                            </span>
-                            {% if reservation.payment_status != 'PAID' and reservation.status == 'CONFIRMED' %}
-                            <a href="{% url 'reservation_payment' reservation.id %}" class="ml-2 btn-primary btn-xs">Pay Now</a>
-                            {% elif reservation.status == 'PENDING' %}
-                            <span class="ml-2 text-yellow-300 text-xs">Waiting for manager confirmation</span>
-                            {% endif %}
-                        </td>
                         <td class="py-4 text-gray-400">
                             {% if reservation.menu_items.exists %}
                                 <ul>
@@ -101,21 +91,20 @@
                             {% endif %}
                         </td>
                         <td class="py-4">
-                            <span class="bg-{% if reservation.status == 'COMPLETED' %}blue{% elif reservation.status == 'CONFIRMED' %}green{% elif reservation.status == 'PENDING' %}yellow{% else %}red{% endif %}-900 text-{% if reservation.status == 'COMPLETED' %}blue{% elif reservation.status == 'CONFIRMED' %}green{% elif reservation.status == 'PENDING' %}yellow{% else %}red{% endif %}-300 text-xs px-2 py-1 rounded-full">
+                            <span class="px-3 py-1 rounded-full text-xs font-semibold {% if reservation.status == 'COMPLETED' %}bg-blue-900 text-blue-300{% elif reservation.status == 'CONFIRMED' %}bg-green-900 text-green-300{% elif reservation.status == 'PENDING' %}bg-yellow-900 text-yellow-300{% else %}bg-red-900 text-red-300{% endif %}">
                                 {{ reservation.get_status_display }}
                             </span>
                         </td>
                         <td class="py-4">
-                            {% if reservation.status == 'PENDING' %}
-                                <a href="{% url 'cancel_reservation' reservation.id %}" class="btn-danger btn-xs">Cancel</a>
-                            {% elif reservation.status == 'CONFIRMED' and reservation.payment_status != 'PAID' %}
-                                <a href="{% url 'reservation_payment' reservation.id %}" class="btn-primary btn-xs">Pay Now</a>
-                            {% elif reservation.status == 'CONFIRMED' and reservation.payment_status == 'PAID' %}
-                                <span class="text-green-300 text-xs">Awaiting preparation</span>
-                            {% elif reservation.status == 'COMPLETED' %}
-                                <span class="text-blue-300 text-xs">Completed</span>
-                            {% elif reservation.status == 'CANCELLED' %}
-                                <span class="text-red-300 text-xs">Cancelled</span>
+                            <span class="px-3 py-1 rounded-full text-xs font-semibold {% if reservation.payment_status == 'PAID' %}bg-green-900 text-green-300{% elif reservation.payment_status == 'PARTIALLY_PAID' %}bg-yellow-900 text-yellow-300{% elif reservation.payment_status == 'PENDING' %}bg-yellow-900 text-yellow-300{% else %}bg-gray-700 text-gray-300{% endif %}">
+                                {{ reservation.get_payment_status_display }}
+                            </span>
+                        </td>
+                        <td class="py-4">
+                            {% if reservation.status == 'CONFIRMED' and reservation.payment_status != 'PAID' %}
+                                <a href="{% url 'reservation_payment' reservation.id %}" class="btn-primary px-4 py-2 rounded-lg">Pay</a>
+                            {% else %}
+                                <button class="bg-gray-700 text-gray-400 px-4 py-2 rounded-lg cursor-not-allowed" disabled>Pay</button>
                             {% endif %}
                         </td>
                     </tr>

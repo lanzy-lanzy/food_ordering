@@ -43,6 +43,15 @@
 {% endblock extra_css %}
 
 {% block content %}
+{% if messages %}
+  <div class="mb-4">
+    {% for message in messages %}
+      <div class="rounded px-4 py-2 mb-2 {{ message.tags }}" style="background: #222; color: #fbbf24;">
+        {{ message }}
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}
 <div class="space-y-8">
     <!-- Stats Overview -->
     <div class="grid grid-cols-1 md:grid-cols-5 gap-6">
@@ -162,7 +171,6 @@
                                 {% if reservation.status == 'PENDING' %}
                                 <form method="post" class="inline">
                                     {% csrf_token %}
-                                    <input type="hidden" name="reservation_id" value="{{ reservation.id }}">
                                     <input type="hidden" name="status" value="CONFIRMED">
                                     <button type="submit" class="text-gray-400 hover:text-green-500 transition duration-300" title="Confirm Reservation">
                                         <i class="fas fa-check"></i>
@@ -171,7 +179,6 @@
 
                                 <form method="post" class="inline">
                                     {% csrf_token %}
-                                    <input type="hidden" name="reservation_id" value="{{ reservation.id }}">
                                     <input type="hidden" name="status" value="CANCELLED">
                                     <button type="submit" class="text-gray-400 hover:text-red-500 transition duration-300" title="Cancel Reservation">
                                         <i class="fas fa-times"></i>
@@ -223,10 +230,10 @@
                         <td class="py-4 text-white">{{ reservation.table_number|default:'Not assigned' }}</td>
                         <td class="py-4 text-gray-300">{{ reservation.special_requests|default:'-' }}</td>
                         <td class="py-4">
-                            <form method="post" action="{% url 'update_reservation_status' reservation.id %}" class="inline">
+                            <form method="post" action="/dashboard/reservations/{{ reservation.id }}/update-status/" class="inline">
                                 {% csrf_token %}
-                                <button name="action" value="confirm" class="btn-success btn-xs mr-2">Approve</button>
-                                <button name="action" value="reject" class="btn-danger btn-xs">Reject</button>
+                                <button name="status" value="CONFIRMED" class="btn-success btn-xs mr-2">Approve</button>
+                                <button name="status" value="CANCELLED" class="btn-danger btn-xs">Reject</button>
                             </form>
                         </td>
                     </tr>
@@ -342,82 +349,48 @@
                     <tr class="text-left text-gray-400 border-b border-gray-800">
                         <th class="pb-3">Date & Time</th>
                         <th class="pb-3">Guest</th>
-                        <th class="pb-3">Party Size</th>
-                        <th class="pb-3">Table</th>
-                        <th class="pb-3">Contact</th>
-                        <th class="pb-3">Payment</th>
-                        <th class="pb-3">Menu Items</th>
                         <th class="pb-3">Status</th>
+                        <th class="pb-3">Payment</th>
                         <th class="pb-3">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for reservation in reservations %}
-                    <tr class="border-b border-gray-800" data-table-number="{{ reservation.table_number|default:'Not assigned' }}" data-special-requests="{{ reservation.special_requests|default:'No special requests' }}">
+                    <tr class="border-b border-gray-800">
                         <td class="py-4 text-white font-medium">{{ reservation.date|date:"M d, Y" }} at {{ reservation.time|time:"H:i" }}</td>
                         <td class="py-4 text-white">{{ reservation.name }}</td>
-                        <td class="py-4 text-gray-400">{{ reservation.party_size }} people</td>
-                        <td class="py-4 text-gray-400">
-                            {% if reservation.table_number %}
-                            Table {{ reservation.table_number }}
-                            {% else %}
-                            Not assigned
-                            {% endif %}
-                        </td>
-                        <td class="py-4 text-gray-400">
-                            <div>{{ reservation.phone }}</div>
-                            <div class="text-xs">{{ reservation.email }}</div>
+                        <td class="py-4">
+                            <span class="status-badge {{ reservation.status|lower }}">{{ reservation.get_status_display }}</span>
                         </td>
                         <td class="py-4">
-                            <span class="status-badge {% if reservation.payment_status == 'PAID' %}confirmed{% elif reservation.payment_status == 'PARTIALLY_PAID' %}pending{% else %}cancelled{% endif %}">
-                                {{ reservation.get_payment_status_display }}
-                            </span>
-                        </td>
-                        <td class="py-4 text-gray-400">
-                            {% if reservation.total_amount > 0 %}
-                            <span class="text-food-gold font-medium">₱{{ reservation.total_amount }}</span>
-                            {% else %}
-                            <span class="text-gray-500">None</span>
-                            {% endif %}
+                            <span class="status-badge {% if reservation.payment_status == 'PAID' %}confirmed{% elif reservation.payment_status == 'PARTIALLY_PAID' %}pending{% elif reservation.payment_status == 'PENDING' %}pending{% else %}cancelled{% endif %}">{{ reservation.get_payment_status_display }}</span>
                         </td>
                         <td class="py-4">
                             {% if reservation.status == 'PENDING' %}
-                            <span class="status-badge pending">Pending</span>
-                            {% elif reservation.status == 'CONFIRMED' %}
-                            <span class="status-badge confirmed">Confirmed</span>
-                            {% elif reservation.status == 'COMPLETED' %}
-                            <span class="status-badge completed">Completed</span>
-                            {% elif reservation.status == 'CANCELLED' %}
-                            <span class="status-badge cancelled">Cancelled</span>
-                            {% endif %}
-                        </td>
-                        <td class="py-4">
-                            <div class="flex space-x-2">
-                                <button class="view-reservation-btn text-gray-400 hover:text-food-gold transition duration-300"
-                                        data-reservation-id="{{ reservation.id }}" title="View Details">
-                                    <i class="fas fa-eye"></i>
-                                </button>
-
-                                {% if reservation.status == 'PENDING' %}
-                                <form method="post" class="inline">
+                                <form method="post" action="/dashboard/reservations/{{ reservation.id }}/update-status/" style="display:inline;">
                                     {% csrf_token %}
-                                    <input type="hidden" name="reservation_id" value="{{ reservation.id }}">
                                     <input type="hidden" name="status" value="CONFIRMED">
-                                    <button type="submit" class="text-gray-400 hover:text-green-500 transition duration-300" title="Confirm Reservation">
-                                        <i class="fas fa-check"></i>
-                                    </button>
+                                    <button type="submit" class="px-3 py-1 rounded bg-green-500 text-white font-bold hover:bg-green-600 transition">Confirm</button>
                                 </form>
-
-                                <form method="post" class="inline">
+                                <form method="post" action="/dashboard/reservations/{{ reservation.id }}/update-status/" style="display:inline;">
                                     {% csrf_token %}
-                                    <input type="hidden" name="reservation_id" value="{{ reservation.id }}">
                                     <input type="hidden" name="status" value="CANCELLED">
-                                    <button type="submit" class="text-gray-400 hover:text-red-500 transition duration-300" title="Cancel Reservation">
-                                        <i class="fas fa-times"></i>
-                                    </button>
+                                    <button type="submit" class="px-3 py-1 rounded bg-red-500 text-white font-bold hover:bg-red-600 transition">Cancel</button>
                                 </form>
-                                {% endif %}
-                            </div>
+                            {% elif reservation.status == 'CONFIRMED' and reservation.payment_status == 'PAID' or reservation.status == 'CONFIRMED' and reservation.payment_status == 'PARTIALLY_PAID' %}
+                                <form method="post" action="/dashboard/reservations/{{ reservation.id }}/update-status/" style="display:inline;">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="status" value="COMPLETED">
+                                    <button type="submit" class="px-3 py-1 rounded bg-yellow-500 text-white font-bold hover:bg-yellow-600 transition">Complete</button>
+                                </form>
+                                <form method="post" action="/dashboard/reservations/{{ reservation.id }}/update-status/" style="display:inline;">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="status" value="CANCELLED">
+                                    <button type="submit" class="px-3 py-1 rounded bg-red-500 text-white font-bold hover:bg-red-600 transition">Cancel</button>
+                                </form>
+                            {% else %}
+                                <button class="bg-gray-700 text-gray-400 px-3 py-1 rounded cursor-not-allowed" disabled>No Actions</button>
+                            {% endif %}
                         </td>
                     </tr>
                     {% endfor %}
@@ -542,7 +515,6 @@
                         ${status === 'Pending' ? `
                         <form method="post" class="inline">
                             {% csrf_token %}
-                            <input type="hidden" name="reservation_id" value="${reservationId}">
                             <input type="hidden" name="status" value="CONFIRMED">
                             <button type="submit" class="bg-green-700 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition duration-300">
                                 <i class="fas fa-check mr-2"></i> Confirm
@@ -551,7 +523,6 @@
 
                         <form method="post" class="inline">
                             {% csrf_token %}
-                            <input type="hidden" name="reservation_id" value="${reservationId}">
                             <input type="hidden" name="status" value="CANCELLED">
                             <button type="submit" class="bg-red-700 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition duration-300">
                                 <i class="fas fa-times mr-2"></i> Cancel

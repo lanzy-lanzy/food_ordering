@@ -50,7 +50,7 @@
                 </thead>
                 <tbody class="divide-y divide-gray-800">
                     {% for reservation in reservations %}
-                    {% if reservation.status == 'CONFIRMED' or reservation.status == 'UNPROCESSED' %}
+                    {% if reservation.status == 'CONFIRMED' %}
                     <tr class="hover:bg-gray-800 transition-colors duration-200">
                         <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-white">
                             {{ reservation.time|time:"H:i" }}
@@ -73,8 +73,23 @@
                             <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full {% if reservation.payment_status == 'PAID' %}bg-green-900 text-green-300{% elif reservation.payment_status == 'PARTIALLY_PAID' %}bg-yellow-900 text-yellow-300{% else %}bg-red-900 text-red-300{% endif %}">
                                 {{ reservation.get_payment_status_display }}
                             </span>
-                            {% if reservation.payment_status != 'PAID' and reservation.status == 'CONFIRMED' %}
-                            <a href="{% url 'verify_reservation_payment' reservation.id %}" class="ml-2 btn-primary btn-xs">Verify Payment</a>
+                            {% if reservation.status == 'CONFIRMED' %}
+                                {% if reservation.payments.exists %}
+                                    {% for payment in reservation.payments.all %}
+                                        {% if payment.status == 'PENDING' %}
+                                            <a href="{% url 'verify_reservation_payment' reservation.id %}" class="ml-2 px-3 py-1 rounded-lg shadow transition duration-200 bg-gradient-to-r from-yellow-400 via-yellow-500 to-yellow-600 hover:from-yellow-500 hover:to-yellow-700 text-gray-900 font-bold border border-yellow-600 ring-2 ring-yellow-300 ring-offset-2 focus:outline-none focus:ring-4 animate-pulse">
+                                                <i class="fas fa-search-dollar mr-1"></i>Verify Payment
+                                            </a>
+                                            <span class="ml-2 px-2 py-1 text-xs rounded-full bg-yellow-800 text-yellow-200">Awaiting Verification</span>
+                                        {% elif payment.status == 'COMPLETED' %}
+                                            <span class="ml-2 px-2 py-1 text-xs rounded-full bg-green-800 text-green-200">Verified</span>
+                                        {% endif %}
+                                    {% empty %}
+                                        <span class="ml-2 px-2 py-1 text-xs rounded-full bg-gray-700 text-gray-400">No Payment Submitted</span>
+                                    {% endfor %}
+                                {% else %}
+                                    <span class="ml-2 px-2 py-1 text-xs rounded-full bg-gray-700 text-gray-400">No Payment Submitted</span>
+                                {% endif %}
                             {% endif %}
                         </td>
                         <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-300">

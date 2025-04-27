@@ -515,24 +515,7 @@ def reservations_dashboard(request):
     pending_reservations_qs = Reservation.objects.filter(status='PENDING').order_by('date', 'time')
 
     # Update reservation status if form submitted
-    if request.method == 'POST':
-        reservation_id = request.POST.get('reservation_id')
-        new_status = request.POST.get('status')
-
-        if reservation_id and new_status in dict(Reservation.STATUS_CHOICES):
-            reservation = get_object_or_404(Reservation, id=reservation_id)
-            reservation.status = new_status
-            reservation.save()
-
-            # Log the activity
-            StaffActivity.objects.create(
-                staff=request.user,
-                action='UPDATE_RESERVATION',
-                details=f"Updated reservation #{reservation_id} status to {dict(Reservation.STATUS_CHOICES)[new_status]}"
-            )
-
-            messages.success(request, f'Reservation #{reservation_id} status updated to {dict(Reservation.STATUS_CHOICES)[new_status]}')
-            return redirect('reservations_dashboard')
+    # (Removed obsolete POST handling; all status changes handled by update_reservation_status view)
 
     # Group reservations by date for calendar view
     calendar_data = {}

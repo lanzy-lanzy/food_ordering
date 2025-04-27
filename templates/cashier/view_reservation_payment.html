@@ -8,6 +8,9 @@
 
 {% block content %}
 <div class="space-y-6">
+    <div class="mb-4">
+        <span class="bg-purple-800 text-white px-2 py-1 rounded text-xs font-bold">CASHIER VIEW TEMPLATE</span>
+    </div>
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Payment Information -->
         <div class="lg:col-span-1">
@@ -55,9 +58,15 @@
                     <div class="bg-gray-800 p-3 rounded-lg">
                         <div class="text-xs text-gray-500 mb-1">Payment Status</div>
                         <div class="font-medium">
+                            {% if payment.reservation.status != 'CONFIRMED' %}
+                            <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-900 text-red-300">
+                                Reservation not confirmed. Payment cannot be processed until confirmation.
+                            </span>
+                            {% else %}
                             <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-900 text-yellow-300">
                                 Pending Verification
                             </span>
+                            {% endif %}
                         </div>
                         <div class="text-xs text-gray-400 mt-2">
                             After verification, this payment will be marked as completed and the reservation will be confirmed.
@@ -79,7 +88,7 @@
                     <h3 class="font-bold mb-4 text-white">Verification Actions</h3>
 
                     <div class="flex flex-col md:flex-row space-y-3 md:space-y-0 md:space-x-3">
-                        <form method="POST" class="w-full md:w-auto">
+                        <form method="POST" action="{% url 'verify_reservation_payment' payment.id %}" class="w-full md:w-auto">
                             {% csrf_token %}
                             <button type="submit" name="action" value="verify" class="btn-success w-full md:w-auto">Verify and Complete</button>
                         </form>

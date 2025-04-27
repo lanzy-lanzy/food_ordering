@@ -1160,51 +1160,61 @@ def update_reservation_status(request, reservation_id):
     """Update the status of a reservation"""
     reservation = get_object_or_404(Reservation, id=reservation_id)
 
-    # Get the next parameter for redirect
-    next_page = request.GET.get('next', 'reservations')
-
     if request.method == 'POST':
         new_status = request.POST.get('status')
+        valid_transitions = {
+            'PENDING': ['CONFIRMED', 'CANCELLED'],
+            'CONFIRMED': ['COMPLETED', 'CANCELLED'],
+            'COMPLETED': [],
+            'CANCELLED': []
+        }
+        current_status = reservation.status
         if new_status in dict(Reservation.STATUS_CHOICES):
-            reservation.status = new_status
-            reservation.save()
-
-            # Log the activity
-            StaffActivity.objects.create(
-                staff=request.user,
-                action='UPDATE_RESERVATION',
-                details=f"Updated reservation #{reservation_id} status to {dict(Reservation.STATUS_CHOICES)[new_status]}"
-            )
-
-            messages.success(request, f'Reservation status updated to {dict(Reservation.STATUS_CHOICES)[new_status]}')
+            if new_status in valid_transitions.get(current_status, []):
+                if new_status == 'COMPLETED' and reservation.payment_status not in ['PAID', 'PARTIALLY_PAID']:
+                    messages.error(request, 'Cannot mark as COMPLETED unless payment is completed or partially paid.')
+                else:
+                    reservation.status = new_status
+                    reservation.save()
+                    StaffActivity.objects.create(
+                        staff=request.user,
+                        action='UPDATE_RESERVATION',
+                        details=f"Updated reservation #{reservation_id} status to {dict(Reservation.STATUS_CHOICES)[new_status]}"
+                    )
+                    messages.success(request, f'Reservation status updated to {dict(Reservation.STATUS_CHOICES)[new_status]}')
+            else:
+                messages.error(request, f'Invalid status transition from {current_status} to {new_status}.')
         else:
             messages.error(request, 'Invalid status provided')
-
-    # Handle GET requests with status parameter (for quick actions from dashboard)
+        return redirect('reservations_dashboard')
     elif request.method == 'GET' and 'status' in request.GET:
         new_status = request.GET.get('status')
+        valid_transitions = {
+            'PENDING': ['CONFIRMED', 'CANCELLED'],
+            'CONFIRMED': ['COMPLETED', 'CANCELLED'],
+            'COMPLETED': [],
+            'CANCELLED': []
+        }
+        current_status = reservation.status
         if new_status in dict(Reservation.STATUS_CHOICES):
-            reservation.status = new_status
-            reservation.save()
-
-            # Log the activity
-            StaffActivity.objects.create(
-                staff=request.user,
-                action='UPDATE_RESERVATION',
-                details=f"Updated reservation #{reservation_id} status to {dict(Reservation.STATUS_CHOICES)[new_status]}"
-            )
-
-            messages.success(request, f'Reservation status updated to {dict(Reservation.STATUS_CHOICES)[new_status]}')
+            if new_status in valid_transitions.get(current_status, []):
+                if new_status == 'COMPLETED' and reservation.payment_status not in ['PAID', 'PARTIALLY_PAID']:
+                    messages.error(request, 'Cannot mark as COMPLETED unless payment is completed or partially paid.')
+                else:
+                    reservation.status = new_status
+                    reservation.save()
+                    StaffActivity.objects.create(
+                        staff=request.user,
+                        action='UPDATE_RESERVATION',
+                        details=f"Updated reservation #{reservation_id} status to {dict(Reservation.STATUS_CHOICES)[new_status]}"
+                    )
+                    messages.success(request, f'Reservation status updated to {dict(Reservation.STATUS_CHOICES)[new_status]}')
+            else:
+                messages.error(request, f'Invalid status transition from {current_status} to {new_status}.')
         else:
             messages.error(request, 'Invalid status provided')
 
-    # Redirect based on the next parameter
-    if next_page == 'manager_dashboard':
-        return redirect('manager_dashboard')
-    elif next_page == 'reservations_dashboard':
-        return redirect('reservations_dashboard')
-    else:
-        return redirect('reservations')
+    return redirect('reservations_dashboard')
 
 
 @login_required
