@@ -25,14 +25,12 @@
 
     <div>
         <label for="id_phone" class="block text-white font-medium mb-2">Phone Number</label>
-        <div class="w-full bg-gray-700 border border-gray-600 rounded-lg py-3 px-4 text-white">
-            {% if request.user.customer_profile.phone %}
-                {{ request.user.customer_profile.phone }}
-            {% else %}
-                <span class="text-gray-500">Please update your phone number in your profile</span>
-            {% endif %}
-        </div>
-        <input type="hidden" name="phone" id="id_phone" value="{{ request.user.customer_profile.phone }}">
+        <input type="tel" name="phone" id="id_phone" value="{{ form.phone.value|default:'' }}" required
+               class="w-full bg-gray-700 border border-gray-600 rounded-lg py-3 px-4 text-white focus:outline-none focus:ring-2 focus:ring-food-gold"
+               placeholder="Enter your phone number">
+        {% if form.phone.errors %}
+            <p class="text-red-500 text-xs mt-1">{{ form.phone.errors.0 }}</p>
+        {% endif %}
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">

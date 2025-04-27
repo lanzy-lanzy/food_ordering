@@ -100,7 +100,6 @@
                             <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full {% if reservation.payment_status == 'PAID' %}bg-green-900 text-green-300{% elif reservation.payment_status == 'PARTIALLY_PAID' %}bg-yellow-900 text-yellow-300{% else %}bg-red-900 text-red-300{% endif %}">
                                 {{ reservation.get_payment_status_display }}
                             </span>
-<<<<<<< HEAD
                             {% if reservation.status == 'CONFIRMED' %}
                                 {% if reservation.payments.exists %}
                                     {% for payment in reservation.payments.all %}
@@ -112,31 +111,10 @@
                                         {% elif payment.status == 'COMPLETED' %}
                                             <span class="ml-2 px-2 py-1 text-xs rounded-full bg-green-800 text-green-200">Verified</span>
                                         {% endif %}
-                                    {% empty %}
-                                        <span class="ml-2 px-2 py-1 text-xs rounded-full bg-gray-700 text-gray-400">No Payment Submitted</span>
                                     {% endfor %}
                                 {% else %}
                                     <span class="ml-2 px-2 py-1 text-xs rounded-full bg-gray-700 text-gray-400">No Payment Submitted</span>
                                 {% endif %}
-=======
-                            {% if reservation.payment and reservation.payment.id %}
-                            {% if reservation.payment_status != 'PAID' and reservation.status == 'CONFIRMED' %}
-                                {% if reservation.payment_status == 'PARTIALLY_PAID' %}
-                                    <a href="{% url 'cashier_mark_prepared' reservation.id %}" class="btn-warning btn-xs flex items-center justify-center">
-                                        <i class="fas fa-utensils mr-1"></i> Mark as Prepared
-                                        <span class="ml-1 text-xs">(Deposit Only)</span>
-                                    </a>
-                                {% else %}
-                                    {% if reservation.payment and reservation.payment.id %}
-                                        <a href="{% url 'verify_reservation_payment' reservation.payment.id %}" class="btn-danger btn-xs flex items-center justify-center">
-                                            <i class="fas fa-cash-register mr-1"></i> Verify Payment
-                                        </a>
-                                    {% else %}
-                                        <span class="text-xs text-red-400">Payment required</span>
-                                    {% endif %}
-                                {% endif %}
-                            {% endif %}
->>>>>>> 19cccab6ae7ad835d87d4e8a336768f52d3fdaf1
                             {% endif %}
                         </td>
                         <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-300">

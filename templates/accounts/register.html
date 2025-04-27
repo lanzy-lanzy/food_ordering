@@ -222,52 +222,6 @@
                     {% endif %}
                 </div>
 
-                <!-- City, State, Zip -->
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                    <div>
-                        <label for="{{ form.city.id_for_label }}" class="block text-sm font-medium text-gray-400 mb-1">City</label>
-                        <div class="flex items-center relative bg-gray-700 border border-gray-600 rounded-md overflow-hidden focus-within:ring-2 focus-within:ring-yellow-500 focus-within:border-yellow-500">
-                            <div class="px-3 py-3 bg-gray-600 flex items-center justify-center">
-                                <i class="fas fa-city text-yellow-500 text-lg"></i>
-                            </div>
-                            <div class="w-full">
-                                {{ form.city }}
-                            </div>
-                        </div>
-                        {% if form.city.errors %}
-                        <p class="text-red-500 text-xs mt-1">{{ form.city.errors.0 }}</p>
-                        {% endif %}
-                    </div>
-                    <div>
-                        <label for="{{ form.state.id_for_label }}" class="block text-sm font-medium text-gray-400 mb-1">State</label>
-                        <div class="flex items-center relative bg-gray-700 border border-gray-600 rounded-md overflow-hidden focus-within:ring-2 focus-within:ring-yellow-500 focus-within:border-yellow-500">
-                            <div class="px-3 py-3 bg-gray-600 flex items-center justify-center">
-                                <i class="fas fa-map text-yellow-500 text-lg"></i>
-                            </div>
-                            <div class="w-full">
-                                {{ form.state }}
-                            </div>
-                        </div>
-                        {% if form.state.errors %}
-                        <p class="text-red-500 text-xs mt-1">{{ form.state.errors.0 }}</p>
-                        {% endif %}
-                    </div>
-                    <div>
-                        <label for="{{ form.zip_code.id_for_label }}" class="block text-sm font-medium text-gray-400 mb-1">ZIP Code</label>
-                        <div class="flex items-center relative bg-gray-700 border border-gray-600 rounded-md overflow-hidden focus-within:ring-2 focus-within:ring-yellow-500 focus-within:border-yellow-500">
-                            <div class="px-3 py-3 bg-gray-600 flex items-center justify-center">
-                                <i class="fas fa-mail-bulk text-yellow-500 text-lg"></i>
-                            </div>
-                            <div class="w-full">
-                                {{ form.zip_code }}
-                            </div>
-                        </div>
-                        {% if form.zip_code.errors %}
-                        <p class="text-red-500 text-xs mt-1">{{ form.zip_code.errors.0 }}</p>
-                        {% endif %}
-                    </div>
-                </div>
-
                 <!-- Password -->
                 <div class="mb-4">
                     <label for="{{ form.password1.id_for_label }}" class="block text-sm font-medium text-gray-400 mb-1">Password</label>

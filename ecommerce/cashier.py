@@ -679,11 +679,16 @@ def orders_list(request):
 
 @login_required
 def print_receipt(request, order_id):
-    """Generate receipt for printing"""
+    """Generate receipt for printing. Shows partial payment if applicable."""
     order = get_object_or_404(Order, id=order_id)
     order_items = order.order_items.all()
 
-    # Log activity
+    # Fetch reservation and payment info if linked
+    reservation = getattr(order, 'reservation', None)
+    payment_info = None
+    if reservation:
+        payment_info = ReservationPayment.objects.filter(reservation=reservation, status='COMPLETED').order_by('-payment_date').first()
+
     StaffActivity.objects.create(
         staff=request.user,
         action='OTHER',
@@ -695,9 +700,10 @@ def print_receipt(request, order_id):
         'order': order,
         'order_items': order_items,
         'print_date': timezone.now(),
-        'cashier_name': request.user.get_full_name()
+        'cashier_name': request.user.get_full_name(),
+        'reservation': reservation,
+        'payment_info': payment_info,
     }
-
     return render(request, 'cashier/receipt.html', context)
 
 
@@ -740,6 +746,67 @@ def print_multiple_receipts(request):
     except Exception as e:
         messages.error(request, f'Error printing receipts: {str(e)}')
         return redirect('cashier_orders_list')
+
+@login_required
+def cashier_profile_edit(request):
+    """Edit cashier profile"""
+    staff_profile = request.user.staff_profile
+
+    if request.method == 'POST':
+        # Get form data
+        email = request.POST.get('email')
+        first_name = request.POST.get('first_name')
+        last_name = request.POST.get('last_name')
+        phone = request.POST.get('phone', '')
+        address = request.POST.get('address', '')
+        emergency_contact = request.POST.get('emergency_contact', '')
+        emergency_phone = request.POST.get('emergency_phone', '')
+        profile_picture = request.FILES.get('profile_picture')
+
+        # Check if email already exists for other users
+        if User.objects.filter(email=email).exclude(id=request.user.id).exists():
+            messages.error(request, f'Email "{email}" is already registered to another user')
+            return redirect('cashier_profile_edit')
+
+        try:
+            # Update user
+            request.user.email = email
+            request.user.first_name = first_name
+            request.user.last_name = last_name
+            request.user.save()
+
+            # Update staff profile
+            staff_profile.phone = phone
+            staff_profile.address = address
+            staff_profile.emergency_contact = emergency_contact
+            staff_profile.emergency_phone = emergency_phone
+
+            # Handle profile picture upload
+            if profile_picture:
+                staff_profile.profile_picture = profile_picture
+
+            staff_profile.save()
+
+            # Log activity
+            StaffActivity.objects.create(
+                staff=request.user,
+                action='OTHER',
+                details=f'Updated own profile information',
+                ip_address=get_client_ip(request)
+            )
+
+            messages.success(request, 'Profile updated successfully')
+            return redirect('cashier_dashboard')
+
+        except Exception as e:
+            messages.error(request, f'Error updating profile: {str(e)}')
+
+    context = {
+        'staff_profile': staff_profile,
+        'active_section': 'profile'
+    }
+
+    return render(request, 'cashier/profile_edit.html', context)
 
 def get_client_ip(request):
     """Get client IP address from request"""
@@ -1122,41 +1189,37 @@ def reservations_list(request):
 
 @login_required
 def process_reservation(request, reservation_id):
-    """Process a confirmed reservation and create an order"""
+    """Process a confirmed reservation and create an order. Handles partial payment and enables receipt printing."""
     reservation = get_object_or_404(Reservation, id=reservation_id, status='CONFIRMED')
 
-    # Check if already processed
     if reservation.is_processed:
         messages.warning(request, f'Reservation #{reservation_id} has already been processed.')
+        # Redirect to order receipt if already processed
+        order = Order.objects.filter(reservation=reservation).first()
+        if order:
+            return redirect('print_receipt', order_id=order.id)
         return redirect('reservations_list')
 
-    # --- ENFORCE PAYMENT STATUS BEFORE PROCESSING ---
     if reservation.payment_status not in ['PAID', 'PARTIALLY_PAID']:
         messages.error(request, f'Reservation #{reservation_id} cannot be processed until payment is completed or at least partially paid.')
         return redirect('reservations_list')
 
     if request.method == 'POST':
         with transaction.atomic():
-            # Mark reservation as processed and update status to COMPLETED
             reservation.is_processed = True
             reservation.processed_by = request.user
             reservation.processed_at = timezone.now()
-            reservation.status = 'COMPLETED'  # Update status to COMPLETED when processed
+            reservation.status = 'COMPLETED'
             reservation.save(update_fields=['is_processed', 'processed_by', 'processed_at', 'status'])
 
-            # Check if there are menu items in the special_requests field
+            # Extract menu items if present
             menu_items_data = None
             special_requests = reservation.special_requests or ''
-
-            # Extract menu items data if present
             import re
             menu_items_match = re.search(r'\[MENU_ITEMS_DATA: (.+?)\]', special_requests)
             if menu_items_match:
                 menu_items_json_str = menu_items_match.group(1)
-                # Remove the menu items data from special_requests
                 clean_special_requests = re.sub(r'\n\n\[MENU_ITEMS_DATA: .+?\]', '', special_requests)
-
-                # Parse the menu items data
                 import json
                 try:
                     menu_items_data = json.loads(menu_items_json_str)
@@ -1165,7 +1228,7 @@ def process_reservation(request, reservation_id):
             else:
                 clean_special_requests = special_requests
 
-            # Calculate total amount if menu items are present
+            # Calculate total amount
             total_amount = Decimal('0.00')
             if menu_items_data:
                 for item in menu_items_data:
@@ -1173,48 +1236,34 @@ def process_reservation(request, reservation_id):
                     quantity = item['quantity']
                     total_amount += menu_item.price * Decimal(str(quantity))
 
-            # Determine payment method and status based on reservation payment
-            payment_method = 'CASH'  # Default
+            # Determine payment method/status
+            payment_method = 'CASH'
             payment_status = 'PENDING'
             order_status = 'PENDING'
             latest_payment = None
-
-            # Check if there's a payment for this reservation
-            # First look for completed payments
             completed_payments = ReservationPayment.objects.filter(
                 reservation=reservation,
                 status='COMPLETED'
             ).order_by('-payment_date')
-
             if completed_payments.exists():
-                # Use the most recent completed payment
                 latest_payment = completed_payments.first()
-
-                # Always set payment method to GCASH for reservation payments
                 payment_method = 'GCASH'
-
-                # Set payment status based on payment type
-                # For FULL payments, always mark as PAID and COMPLETED
                 if latest_payment.payment_type == 'FULL':
                     payment_status = 'PAID'
                     order_status = 'COMPLETED'
-                else:  # DEPOSIT
+                else:
                     payment_status = 'PARTIALLY_PAID'
+                    order_status = 'COMPLETED'  # Allow completion for partial payment
             else:
-                # If no completed payments, check for pending payments
                 pending_payments = ReservationPayment.objects.filter(
                     reservation=reservation,
                     status='PENDING'
                 ).order_by('-payment_date')
-
                 if pending_payments.exists():
-                    # Use the most recent pending payment
                     latest_payment = pending_payments.first()
-
-                    # Always set payment method to GCASH for reservation payments
                     payment_method = 'GCASH'
 
-            # Create a new order for this reservation
+            # Create order and link to reservation
             order = Order.objects.create(
                 user=reservation.user,
                 status=order_status,
@@ -1225,71 +1274,28 @@ def process_reservation(request, reservation_id):
                 number_of_guests=reservation.party_size,
                 special_instructions=clean_special_requests,
                 created_by=request.user,
-                total_amount=total_amount,
-                tax_amount=Decimal('0.00'),
-                delivery_fee=Decimal('0.00'),
-                discount_amount=Decimal('0.00')
+                total_amount=total_amount
             )
-
-            # If there's a completed payment, create a payment record for the order
-            if latest_payment and latest_payment.status == 'COMPLETED':
-                # Create a payment record for the order to maintain consistency
-                Payment.objects.create(
-                    order=order,
-                    amount=latest_payment.amount,
-                    payment_method='GCASH',
-                    status='COMPLETED',
-                    reference_number=latest_payment.reference_number,
-                    payment_proof=latest_payment.payment_proof,
-                    verified_by=latest_payment.verified_by,
-                    verification_date=latest_payment.verification_date,
-                    notes=f'Payment from reservation #{reservation.id}'
-                )
-            elif latest_payment and latest_payment.status == 'PENDING':
-                # Create a pending payment record for the order
-                Payment.objects.create(
-                    order=order,
-                    amount=latest_payment.amount,
-                    payment_method='GCASH',
-                    status='PENDING',
-                    reference_number=latest_payment.reference_number,
-                    payment_proof=latest_payment.payment_proof,
-                    notes=f'Pending payment from reservation #{reservation.id}'
-                )
-
-            # Add menu items to the order if present
+            # Add menu items to order if any
             if menu_items_data:
                 for item in menu_items_data:
                     menu_item = MenuItem.objects.get(id=item['id'])
-                    OrderItem.objects.create(
-                        order=order,
-                        menu_item=menu_item,
-                        quantity=item['quantity'],
-                        price=menu_item.price
-                    )
+                    quantity = item['quantity']
+                    order.order_items.create(menu_item=menu_item, quantity=quantity, price=menu_item.price)
 
-            # Log the activity
+            # Log activity
             StaffActivity.objects.create(
                 staff=request.user,
                 action='PROCESS_RESERVATION',
-                details=f"Processed reservation #{reservation_id} and created order #{order.id}"
+                details=f"Processed reservation #{reservation.id} (Order #{order.id})",
+                ip_address=get_client_ip(request)
             )
 
-            messages.success(request, f'Reservation #{reservation_id} has been processed. Order #{order.id} created.')
-            return redirect('view_order', order_id=order.id)
+            # Redirect to print receipt after processing
+            return redirect('print_receipt', order_id=order.id)
 
-    # Get menu items for the order creation form
-    menu_items = MenuItem.objects.filter(is_available=True).order_by('category', 'name')
-    categories = Category.objects.filter(is_active=True)
-
-    context = {
-        'reservation': reservation,
-        'menu_items': menu_items,
-        'categories': categories,
-        'active_section': 'reservations_list'
-    }
-
-    return render(request, 'cashier/process_reservation.html', context)
+    # GET: Show processing page
+    return render(request, 'cashier/process_reservation.html', {'reservation': reservation})
 
 
 @login_required
@@ -1507,6 +1513,57 @@ def reject_reservation_payment(request, payment_id):
         'active_section': 'pending_reservation_payments'
     }
     return render(request, 'cashier/reject_reservation_payment.html', context)
+
+@login_required
+def settle_remaining_balance(request, order_id):
+    """Settle the remaining balance for an order that was partially paid via reservation deposit."""
+    order = get_object_or_404(Order, id=order_id)
+    reservation = getattr(order, 'reservation', None)
+
+    if not reservation or reservation.payment_status != 'PARTIALLY_PAID':
+        messages.error(request, 'This order does not have a partially paid reservation.')
+        return redirect('print_receipt', order_id=order.id)
+
+    if request.method == 'POST':
+        # Assume cashier enters the remaining payment amount
+        remaining_due = order.total_amount
+        payment_info = ReservationPayment.objects.filter(reservation=reservation, status='COMPLETED', payment_type='DEPOSIT').order_by('-payment_date').first()
+        if payment_info:
+            remaining_due -= payment_info.amount
+        try:
+            paid_amount = Decimal(request.POST.get('paid_amount', '0'))
+        except Exception:
+            paid_amount = Decimal('0.00')
+        if paid_amount < remaining_due:
+            messages.error(request, f'Amount entered (₱{paid_amount}) is less than the remaining balance (₱{remaining_due}).')
+            return redirect('settle_remaining_balance', order_id=order.id)
+        # Mark reservation and order as fully paid
+        reservation.payment_status = 'PAID'
+        reservation.save(update_fields=['payment_status'])
+        order.payment_status = 'PAID'
+        order.status = 'COMPLETED'
+        order.save(update_fields=['payment_status', 'status'])
+        # Log payment (could create a Payment object here as well)
+        StaffActivity.objects.create(
+            staff=request.user,
+            action='SETTLE_BALANCE',
+            details=f'Settled remaining balance for order #{order.id}',
+            ip_address=get_client_ip(request)
+        )
+        messages.success(request, f'Order #{order.id} is now fully paid and completed.')
+        return redirect('print_receipt', order_id=order.id)
+
+    # GET: Show settle balance form
+    payment_info = ReservationPayment.objects.filter(reservation=reservation, status='COMPLETED', payment_type='DEPOSIT').order_by('-payment_date').first()
+    remaining_due = order.total_amount
+    if payment_info:
+        remaining_due -= payment_info.amount
+    return render(request, 'cashier/settle_balance.html', {
+        'order': order,
+        'reservation': reservation,
+        'remaining_due': remaining_due,
+        'payment_info': payment_info,
+    })
 
 @login_required
 def cashier_mark_prepared(request, reservation_id):

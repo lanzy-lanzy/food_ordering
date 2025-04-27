@@ -326,7 +326,7 @@
     <!-- Quick Links -->
     <div class="card p-6">
         <h2 class="text-xl font-bold mb-4">Quick Actions</h2>
-        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-4">
             <a href="{% url 'sales_report' %}" class="bg-blue-900 hover:bg-blue-800 text-white p-4 rounded-lg flex flex-col items-center justify-center text-center">
                 <i class="fas fa-chart-bar text-2xl mb-2"></i>
                 <span>Sales Reports</span>
@@ -353,6 +353,11 @@
                 {% if pending_reservations > 0 %}
                 <span class="absolute -top-2 -right-2 bg-red-600 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center animate-pulse">{{ pending_reservations }}</span>
                 {% endif %}
+            </a>
+
+            <a href="{% url 'manager_profile_edit' %}" class="bg-teal-900 hover:bg-teal-800 text-white p-4 rounded-lg flex flex-col items-center justify-center text-center">
+                <i class="fas fa-user-edit text-2xl mb-2"></i>
+                <span>Edit Profile</span>
             </a>
         </div>
     </div>

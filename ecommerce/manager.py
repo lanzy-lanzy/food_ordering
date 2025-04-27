@@ -692,6 +692,71 @@ def calculate_percentage_change(old_value, new_value):
 
     return ((new_value - old_value) / old_value) * 100
 
+@login_required
+def manager_profile_edit(request):
+    """Edit manager profile"""
+    staff_profile = request.user.staff_profile
+
+    if request.method == 'POST':
+        # Get form data
+        email = request.POST.get('email')
+        first_name = request.POST.get('first_name')
+        last_name = request.POST.get('last_name')
+        phone = request.POST.get('phone', '')
+        address = request.POST.get('address', '')
+        emergency_contact = request.POST.get('emergency_contact', '')
+        emergency_phone = request.POST.get('emergency_phone', '')
+        profile_picture = request.FILES.get('profile_picture')
+
+        # Check if email already exists for other users
+        if User.objects.filter(email=email).exclude(id=request.user.id).exists():
+            messages.error(request, f'Email "{email}" is already registered to another user')
+            return redirect('manager_profile_edit')
+
+        try:
+            # Update user
+            request.user.email = email
+            request.user.first_name = first_name
+            request.user.last_name = last_name
+            request.user.save()
+
+            # Update staff profile
+            staff_profile.phone = phone
+            staff_profile.address = address
+            staff_profile.emergency_contact = emergency_contact
+            staff_profile.emergency_phone = emergency_phone
+
+            # Handle profile picture upload
+            if profile_picture:
+                staff_profile.profile_picture = profile_picture
+
+            staff_profile.save()
+
+            # Log activity
+            StaffActivity.objects.create(
+                staff=request.user,
+                action='OTHER',
+                details=f'Updated own profile information',
+                ip_address=get_client_ip(request)
+            )
+
+            messages.success(request, 'Profile updated successfully')
+            return redirect('manager_dashboard')
+
+        except Exception as e:
+            messages.error(request, f'Error updating profile: {str(e)}')
+
+    # Get recent activities
+    recent_activities = StaffActivity.objects.filter(staff=request.user).order_by('-timestamp')[:10]
+
+    context = {
+        'staff_profile': staff_profile,
+        'recent_activities': recent_activities,
+        'active_section': 'profile'
+    }
+
+    return render(request, 'manager/profile_edit.html', context)
+
 def get_client_ip(request):
     """Get client IP address from request"""
     x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')

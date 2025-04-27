@@ -13,7 +13,8 @@ from decimal import Decimal
 from .models import Category, MenuItem, Cart, CartItem, Order, OrderItem, Review, Reservation, StaffProfile, CustomerProfile, Payment, Refund, ReservationPayment, StaffActivity
 from django.contrib.auth.forms import PasswordChangeForm
 from .forms import RegistrationForm, CheckoutForm, GCashPaymentForm, ReservationForm, ReservationPaymentForm
-
+import logging
+logger = logging.getLogger(__name__)
 
 def redirect_based_on_role(user):
     """Redirect user based on their role"""
@@ -565,17 +566,16 @@ def user_register(request):
         form = RegistrationForm(request.POST)
         if form.is_valid():
             user = form.save()
+            # Always update the customer profile with phone after registration
+            from .models import CustomerProfile
+            profile, _ = CustomerProfile.objects.get_or_create(user=user)
+            profile.phone = form.cleaned_data.get('phone', '')
+            profile.address = form.cleaned_data.get('address', '')
+            profile.save()
             # Log the user in after registration
             login(request, user)
             messages.success(request, 'Registration successful! Welcome to 5th Avenue Grill and Restobar.')
-            # Ensure the user has a customer profile before redirecting
-            if hasattr(user, 'customer_profile'):
-                return redirect('customer_dashboard')
-            else:
-                # This should not happen with our updated form, but just in case
-                from .models import CustomerProfile
-                CustomerProfile.objects.create(user=user)
-                return redirect('customer_dashboard')
+            return redirect('customer_dashboard')
     else:
         form = RegistrationForm()
 
@@ -1155,65 +1155,45 @@ def reservations_list(request):
 
 
 @login_required
-@permission_required('ecommerce.change_reservation', raise_exception=True)
 def update_reservation_status(request, reservation_id):
     """Update the status of a reservation"""
     reservation = get_object_or_404(Reservation, id=reservation_id)
 
+    # Only allow MANAGER to approve/confirm/cancel reservations
+    has_manager_role = hasattr(request.user, 'staff_profile') and getattr(request.user.staff_profile, 'role', None) == 'MANAGER'
+    if not has_manager_role:
+        logger.warning(f"User {request.user} attempted to update reservation {reservation_id} without MANAGER role.")
+        messages.error(request, 'Only managers can approve or update reservation status.')
+        return redirect('reservations_dashboard')
+
     if request.method == 'POST':
         new_status = request.POST.get('status')
+        logger.info(f"Manager {request.user} is attempting to set reservation {reservation_id} to {new_status}")
         valid_transitions = {
             'PENDING': ['CONFIRMED', 'CANCELLED'],
-            'CONFIRMED': ['COMPLETED', 'CANCELLED'],
+            'CONFIRMED': [],
             'COMPLETED': [],
             'CANCELLED': []
         }
         current_status = reservation.status
         if new_status in dict(Reservation.STATUS_CHOICES):
             if new_status in valid_transitions.get(current_status, []):
-                if new_status == 'COMPLETED' and reservation.payment_status not in ['PAID', 'PARTIALLY_PAID']:
-                    messages.error(request, 'Cannot mark as COMPLETED unless payment is completed or partially paid.')
-                else:
-                    reservation.status = new_status
-                    reservation.save()
-                    StaffActivity.objects.create(
-                        staff=request.user,
-                        action='UPDATE_RESERVATION',
-                        details=f"Updated reservation #{reservation_id} status to {dict(Reservation.STATUS_CHOICES)[new_status]}"
-                    )
-                    messages.success(request, f'Reservation status updated to {dict(Reservation.STATUS_CHOICES)[new_status]}')
+                reservation.status = new_status
+                reservation.save()
+                StaffActivity.objects.create(
+                    staff=request.user,
+                    action='UPDATE_RESERVATION',
+                    details=f"Manager updated reservation #{reservation_id} status to {dict(Reservation.STATUS_CHOICES)[new_status]}"
+                )
+                logger.info(f"Reservation {reservation_id} status updated to {new_status} by MANAGER {request.user}")
+                messages.success(request, f'Reservation status updated to {dict(Reservation.STATUS_CHOICES)[new_status]}')
             else:
+                logger.warning(f"Invalid status transition from {current_status} to {new_status} for reservation {reservation_id}")
                 messages.error(request, f'Invalid status transition from {current_status} to {new_status}.')
         else:
+            logger.error(f"Invalid status provided: {new_status} for reservation {reservation_id}")
             messages.error(request, 'Invalid status provided')
         return redirect('reservations_dashboard')
-    elif request.method == 'GET' and 'status' in request.GET:
-        new_status = request.GET.get('status')
-        valid_transitions = {
-            'PENDING': ['CONFIRMED', 'CANCELLED'],
-            'CONFIRMED': ['COMPLETED', 'CANCELLED'],
-            'COMPLETED': [],
-            'CANCELLED': []
-        }
-        current_status = reservation.status
-        if new_status in dict(Reservation.STATUS_CHOICES):
-            if new_status in valid_transitions.get(current_status, []):
-                if new_status == 'COMPLETED' and reservation.payment_status not in ['PAID', 'PARTIALLY_PAID']:
-                    messages.error(request, 'Cannot mark as COMPLETED unless payment is completed or partially paid.')
-                else:
-                    reservation.status = new_status
-                    reservation.save()
-                    StaffActivity.objects.create(
-                        staff=request.user,
-                        action='UPDATE_RESERVATION',
-                        details=f"Updated reservation #{reservation_id} status to {dict(Reservation.STATUS_CHOICES)[new_status]}"
-                    )
-                    messages.success(request, f'Reservation status updated to {dict(Reservation.STATUS_CHOICES)[new_status]}')
-            else:
-                messages.error(request, f'Invalid status transition from {current_status} to {new_status}.')
-        else:
-            messages.error(request, 'Invalid status provided')
-
     return redirect('reservations_dashboard')
 
 

@@ -166,8 +166,16 @@
             <div>Grill and Restobar</div>
             <div style="margin-top:5px; font-size:12px;">Order #: {{ order.id }}</div>
             <div style="font-size:12px;">Date: {{ order.created_at|date:'Y-m-d H:i' }}</div>
-            <div style="font-size:12px;">Cashier: {{ cashier.get_full_name }}</div>
+            <div style="font-size:12px;">Cashier: {{ cashier_name }}</div>
             <div style="font-size:12px;">Customer: {{ order.user.get_full_name }}</div>
+            {% if reservation %}
+                <div style="font-size:12px;">Reservation #: {{ reservation.id }}</div>
+                <div style="font-size:12px;">Reservation Status: {{ reservation.get_status_display }}</div>
+                <div style="font-size:12px;">Payment Status: {{ reservation.get_payment_status_display }}</div>
+                {% if payment_info and payment_info.payment_type == 'DEPOSIT' %}
+                    <div style="font-size:12px; color:orange;">Partial Payment (Deposit): ₱{{ payment_info.amount|floatformat:2 }}</div>
+                {% endif %}
+            {% endif %}
             <div class="divider"></div>
         </div>
         <div class="info">
@@ -181,7 +189,6 @@
                 <tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr>
             </thead>
             <tbody>
-                {% with total=0 %}
                 {% for item in order.order_items.all %}
                 <tr>
                     <td>{{ item.menu_item.name }}</td>
@@ -189,13 +196,18 @@
                     <td>₱{{ item.price|floatformat:2 }}</td>
                     <td>₱{{ item.subtotal|floatformat:2 }}</td>
                 </tr>
-                {% with total=total|add:item.subtotal %}{% endwith %}
                 {% endfor %}
-                {% endwith %}
             </tbody>
         </table>
         <div class="divider"></div>
         <div class="total">Total: ₱{{ order.total_amount|floatformat:2 }}</div>
+        {% if reservation and reservation.payment_status == 'PARTIALLY_PAID' %}
+            <div style="color:orange; font-weight:bold; font-size:13px;">PARTIAL PAYMENT RECEIVED</div>
+            {% if payment_info %}
+                <div style="font-size:12px;">Deposit: ₱{{ payment_info.amount|floatformat:2 }}</div>
+                <div style="font-size:12px;">Balance Due: ₱{{ order.total_amount|floatformat:2|add:"-"|add:payment_info.amount|floatformat:2 }}</div>
+            {% endif %}
+        {% endif %}
         <div class="divider"></div>
         <div class="footer">
             <div>Thank you for dining with us!</div>

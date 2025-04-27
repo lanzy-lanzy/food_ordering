@@ -11,13 +11,10 @@ class RegistrationForm(UserCreationForm):
     last_name = forms.CharField(max_length=30, required=True)
     phone = forms.CharField(max_length=20, required=False)
     address = forms.CharField(widget=forms.Textarea(attrs={'rows': 3}), required=False)
-    city = forms.CharField(max_length=100, required=False)
-    state = forms.CharField(max_length=100, required=False)
-    zip_code = forms.CharField(max_length=20, required=False)
 
     class Meta:
         model = User
-        fields = ('username', 'first_name', 'last_name', 'email', 'password1', 'password2')
+        fields = ('username', 'email', 'first_name', 'last_name', 'phone', 'address', 'password1', 'password2')
 
     def save(self, commit=True):
         user = super().save(commit=False)
@@ -34,9 +31,6 @@ class RegistrationForm(UserCreationForm):
             profile, created = CustomerProfile.objects.get_or_create(user=user)
             profile.phone = self.cleaned_data.get('phone', '')
             profile.address = self.cleaned_data.get('address', '')
-            profile.city = self.cleaned_data.get('city', '')
-            profile.state = self.cleaned_data.get('state', '')
-            profile.zip_code = self.cleaned_data.get('zip_code', '')
             profile.save()
 
         return user

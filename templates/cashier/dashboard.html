@@ -60,7 +60,7 @@
     <!-- Quick Actions -->
     <div class="card p-6">
         <h2 class="text-xl font-bold mb-4">Quick Actions</h2>
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
             <a href="{% url 'new_order' %}" class="bg-food-gold hover:bg-food-gold-light text-white p-4 rounded-lg flex items-center justify-center">
                 <i class="fas fa-plus-circle mr-2 text-xl"></i>
                 <span class="font-medium">New Order</span>
@@ -79,6 +79,11 @@
             <a href="{% url 'menu' %}" class="bg-gray-700 hover:bg-gray-600 text-white p-4 rounded-lg flex items-center justify-center">
                 <i class="fas fa-utensils mr-2 text-xl"></i>
                 <span class="font-medium">View Menu</span>
+            </a>
+
+            <a href="{% url 'cashier_profile_edit' %}" class="bg-green-600 hover:bg-green-700 text-white p-4 rounded-lg flex items-center justify-center">
+                <i class="fas fa-user-edit mr-2 text-xl"></i>
+                <span class="font-medium">Edit My Profile</span>
             </a>
         </div>
     </div>

@@ -3,6 +3,30 @@
 
 {% block title %}Order Confirmation - 5th Avenue Grill and Restobar{% endblock title %}
 
+{% block extra_css %}
+<style>
+    /* Custom file input styling */
+    input[type="file"] {
+        cursor: pointer;
+    }
+
+    input[type="file"]::file-selector-button {
+        background-color: #374151;
+        border: 0;
+        color: white;
+        padding: 0.5rem 1rem;
+        margin-right: 1rem;
+        border-radius: 0.25rem;
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+
+    input[type="file"]::file-selector-button:hover {
+        background-color: #4B5563;
+    }
+</style>
+{% endblock extra_css %}
+
 {% block content %}
 <section class="py-12 bg-gray-900">
     <div class="container mx-auto px-4">
@@ -200,6 +224,36 @@
                     </div>
                 </div>
             </div>
+
+            {% if order.payment_status == 'UNPAID' and order.payment_method == 'GCASH' %}
+            <!-- Reference Number Input Section -->
+            <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden mb-8">
+                <div class="p-6">
+                    <h3 class="text-lg font-semibold mb-4 text-white">Payment Reference</h3>
+                    <form method="POST" action="{% url 'gcash_payment' order.id %}" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        <div class="mb-4">
+                            <label for="reference_number" class="block text-sm font-medium text-white mb-2">GCash Reference Number</label>
+                            <input type="text" id="reference_number" name="reference_number" required
+                                   class="w-full bg-gray-700 border border-gray-600 rounded-lg py-3 px-4 text-white focus:outline-none focus:ring-2 focus:ring-food-gold"
+                                   placeholder="Enter your GCash reference number">
+                            <p class="text-gray-400 text-xs mt-1">Enter the reference number from your GCash transaction</p>
+                        </div>
+
+                        <div class="mb-4">
+                            <label for="payment_proof" class="block text-sm font-medium text-white mb-2">Payment Screenshot</label>
+                            <input type="file" id="payment_proof" name="payment_proof" required
+                                   class="w-full bg-gray-700 border border-gray-600 rounded-lg py-2 px-4 text-white focus:outline-none focus:ring-2 focus:ring-food-gold">
+                            <p class="text-gray-400 text-xs mt-1">Upload a screenshot of your GCash payment confirmation</p>
+                        </div>
+
+                        <button type="submit" class="bg-food-gold hover:bg-food-gold-light text-gray-900 font-bold py-3 px-6 rounded-md transition-colors duration-200">
+                            <i class="fas fa-check-circle mr-2"></i> Submit Payment Details
+                        </button>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
 
             <!-- Action Buttons -->
             <div class="flex flex-col md:flex-row space-y-4 md:space-y-0 md:space-x-4">

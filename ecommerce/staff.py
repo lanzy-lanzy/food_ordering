@@ -280,6 +280,9 @@ def staff_profile_view(request):
     """View and edit current staff profile"""
     staff_profile = request.user.staff_profile
 
+    # Check if edit mode is requested
+    edit_mode = request.GET.get('edit') == 'true'
+
     if request.method == 'POST':
         # Get form data
         email = request.POST.get('email')
@@ -328,6 +331,8 @@ def staff_profile_view(request):
 
         except Exception as e:
             messages.error(request, f'Error updating profile: {str(e)}')
+            # Stay in edit mode if there was an error
+            edit_mode = True
 
     # Get recent activities
     recent_activities = StaffActivity.objects.filter(staff=request.user).order_by('-timestamp')[:10]
@@ -335,7 +340,8 @@ def staff_profile_view(request):
     context = {
         'staff_profile': staff_profile,
         'recent_activities': recent_activities,
-        'active_section': 'profile'
+        'active_section': 'profile',
+        'edit_mode': edit_mode
     }
 
     return render(request, 'accounts/staff_profile.html', context)
