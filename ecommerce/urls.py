@@ -6,10 +6,10 @@ from .views import (
     orders_list, reservations_list, reviews_list, user_settings,
     edit_menu_item, delete_menu_item, edit_category, delete_category,
     customer_dashboard, my_orders, my_reviews, profile, change_password,
-    make_reservation, reservation_payment, my_reservations, cancel_reservation, update_reservation_status,
-    customer_cancel_order, view_customer_order, track_preparation,
-    cashier_add_menu_items_to_reservation
+    make_reservation, reservation_payment, my_reservations, edit_reservation, cancel_reservation, update_reservation_status,
+    customer_cancel_order, view_customer_order, track_preparation
 )
+from .api import menu_items_api, reservation_detail_api
 from .admin import admin_dashboard
 from .inventory import (
     inventory_dashboard, add_inventory, inventory_history,
@@ -24,7 +24,7 @@ from .cashier import (
     orders_list as cashier_orders_list, print_receipt, print_multiple_receipts,
     pending_payments, view_payment, verify_payment, reject_payment, record_payment,
     cancel_order, reservations_list as cashier_reservations_list, process_reservation,
-    pending_reservation_payments, view_reservation_payment, verify_reservation_payment, reject_reservation_payment,
+    pending_reservation_payments, view_reservation_payment, reject_reservation_payment,
     cashier_mark_prepared, preparation_tracker, settle_remaining_balance, cashier_profile_edit
 )
 from .manager import (
@@ -40,6 +40,8 @@ urlpatterns = [
     path('', home, name='home'),
     path('menu/', menu, name='menu'),
     path('filter-menu/', filter_menu, name='filter_menu'),
+    path('api/menu-items/', menu_items_api, name='menu_items_api'),
+    path('api/reservations/<int:reservation_id>/', reservation_detail_api, name='reservation_detail_api'),
     path('add-to-cart/<int:item_id>/', add_to_cart, name='add_to_cart'),
     path('cart/', view_cart, name='view_cart'),
     path('update-cart-item/<int:item_id>/', update_cart_item, name='update_cart_item'),
@@ -85,6 +87,7 @@ urlpatterns = [
     path('reservations/', make_reservation, name='make_reservation'),
     path('reservations/<int:reservation_id>/payment/', reservation_payment, name='reservation_payment'),
     path('customer/reservations/', my_reservations, name='my_reservations'),
+    path('customer/reservations/<int:reservation_id>/edit/', edit_reservation, name='edit_reservation'),
     path('customer/reservations/<int:reservation_id>/cancel/', cancel_reservation, name='cancel_reservation'),
 
     # Reviews Management
@@ -139,12 +142,11 @@ urlpatterns = [
     path('cashier/reservations/<int:reservation_id>/process/', process_reservation, name='process_reservation'),
     path('cashier/reservation/<int:reservation_id>/mark-prepared/', cashier_mark_prepared, name='cashier_mark_prepared'),
     path('cashier/preparation-tracker/', preparation_tracker, name='preparation_tracker'),
-    path('cashier/reservation/<int:reservation_id>/add-menu-items/', cashier_add_menu_items_to_reservation, name='cashier_add_menu_items_to_reservation'),
+    # Removed path for cashier_add_menu_items_to_reservation as part of simplifying the reservation process
 
     # Cashier Reservation Payment Management
     path('cashier/reservation-payments/', pending_reservation_payments, name='pending_reservation_payments'),
     path('cashier/reservation-payments/<int:payment_id>/', view_reservation_payment, name='view_reservation_payment'),
-    path('cashier/reservation-payments/<int:payment_id>/verify/', verify_reservation_payment, name='verify_reservation_payment'),
     path('cashier/reservation-payments/<int:payment_id>/reject/', reject_reservation_payment, name='reject_reservation_payment'),
 
     # Payment Management

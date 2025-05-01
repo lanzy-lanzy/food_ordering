@@ -193,7 +193,7 @@
         {% endif %}
     </div>
 
-    <!-- Streamline actionable pending reservations table for managers -->
+    <!-- Simplified Pending Reservations Section -->
     <div class="card p-8 mt-8 bg-gray-900 rounded-lg shadow-lg">
         <h2 class="text-2xl font-bold mb-6 text-food-gold">Pending Reservations</h2>
         {% if pending_reservations_qs %}
@@ -205,7 +205,7 @@
                         <th class="py-3">Guest</th>
                         <th class="py-3">Party Size</th>
                         <th class="py-3">Table</th>
-                        <th class="py-3">Special Requests</th>
+                        <th class="py-3">Pre-order</th>
                         <th class="py-3">Actions</th>
                     </tr>
                 </thead>
@@ -216,9 +216,15 @@
                         <td class="py-4">{{ reservation.name }}</td>
                         <td class="py-4">{{ reservation.party_size }}</td>
                         <td class="py-4">{{ reservation.table_number|default:'Not assigned' }}</td>
-                        <td class="py-4">{{ reservation.special_requests|default:'-' }}</td>
                         <td class="py-4">
-                            <form method="post" action="/manager/reservations/{{ reservation.id }}/update-status/" class="inline">
+                            {% if reservation.has_menu_items %}
+                                <span class="text-food-gold">Yes</span>
+                            {% else %}
+                                <span class="text-gray-500">No</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-4">
+                            <form method="post" action="{% url 'update_reservation_status' reservation.id %}" class="inline">
                                 {% csrf_token %}
                                 <button name="status" value="CONFIRMED" class="px-4 py-2 rounded bg-green-600 text-white font-bold hover:bg-green-700 transition mr-2">Approve</button>
                                 <button name="status" value="CANCELLED" class="px-4 py-2 rounded bg-red-600 text-white font-bold hover:bg-red-700 transition">Reject</button>
@@ -362,12 +368,6 @@
                                     <button name="status" value="CONFIRMED" class="px-3 py-1 rounded bg-green-500 text-white font-bold hover:bg-green-600 transition">Approve</button>
                                     <button name="status" value="CANCELLED" class="px-3 py-1 rounded bg-red-500 text-white font-bold hover:bg-red-600 transition">Reject</button>
                                 </form>
-                            {% elif reservation.status == 'CONFIRMED' and reservation.payment_status == 'PAID' or reservation.status == 'CONFIRMED' and reservation.payment_status == 'PARTIALLY_PAID' %}
-                                <form method="post" action="{% url 'update_reservation_status' reservation.id %}" style="display:inline;">
-                                    {% csrf_token %}
-                                    <button name="status" value="COMPLETED" class="px-3 py-1 rounded bg-yellow-500 text-white font-bold hover:bg-yellow-600 transition">Complete</button>
-                                    <button name="status" value="CANCELLED" class="px-3 py-1 rounded bg-red-500 text-white font-bold hover:bg-red-600 transition">Cancel</button>
-                                </form>
                             {% else %}
                                 <button class="bg-gray-700 text-gray-400 px-3 py-1 rounded cursor-not-allowed" disabled>No Actions</button>
                             {% endif %}
@@ -427,60 +427,138 @@
                 </div>
             `;
 
-            // In a real implementation, you would fetch the reservation details from the server
-            // For now, we'll find the reservation in the table
-            const row = document.querySelector(`[data-reservation-id="${reservationId}"]`).closest('tr');
-            const dateTime = row.cells[0].textContent;
-            const name = row.cells[1].textContent;
-            const partySize = row.cells[2].textContent;
-            const contact = row.cells[3].innerHTML;
-            const statusElement = row.cells[4].querySelector('.status-badge');
-            const status = statusElement.textContent;
-            const statusClass = statusElement.classList.contains('pending') ? 'pending' :
-                               statusElement.classList.contains('confirmed') ? 'confirmed' : 'cancelled';
+            // Fetch reservation details from the server
+            fetch(`/api/reservations/${reservationId}/`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch reservation details');
+                    }
+                    return response.json();
+                })
+                .then(reservation => {
+                    renderReservationDetails(reservation);
+                })
+                .catch(error => {
+                    console.error('Error fetching reservation details:', error);
 
-            // Get table number and special requests if available
-            const tableNumber = row.getAttribute('data-table-number') || 'Not assigned';
-            const specialRequests = row.getAttribute('data-special-requests') || 'No special requests';
+                    // Fallback to getting data from the table row if API fails
+                    const row = document.querySelector(`[data-reservation-id="${reservationId}"]`).closest('tr');
+                    const dateTime = row.cells[0].textContent;
+                    const name = row.cells[1].textContent;
+                    const partySize = row.cells[2].textContent;
+                    const contact = row.cells[3] ? row.cells[3].innerHTML : 'N/A';
+
+                    // Find status element - might be in different cell depending on which table
+                    let statusElement, status, statusClass;
+                    for (let i = 0; i < row.cells.length; i++) {
+                        statusElement = row.cells[i].querySelector('.status-badge');
+                        if (statusElement) {
+                            status = statusElement.textContent;
+                            statusClass = statusElement.classList.contains('pending') ? 'pending' :
+                                        statusElement.classList.contains('confirmed') ? 'confirmed' :
+                                        statusElement.classList.contains('completed') ? 'completed' : 'cancelled';
+                            break;
+                        }
+                    }
+
+                    // Get table number and special requests if available
+                    const tableNumber = row.getAttribute('data-table-number') || 'Not assigned';
+                    const specialRequests = row.getAttribute('data-special-requests') || 'No special requests';
+
+                    // Create a simplified reservation object
+                    const simplifiedReservation = {
+                        id: reservationId,
+                        name: name,
+                        date: dateTime.split(' at ')[0].trim(),
+                        time: dateTime.includes(' at ') ? dateTime.split(' at ')[1].trim() : '',
+                        party_size: partySize,
+                        table_number: tableNumber,
+                        special_requests: specialRequests,
+                        status: status,
+                        status_class: statusClass,
+                        has_menu_items: row.querySelector('.text-food-gold') !== null
+                    };
+
+                    renderReservationDetails(simplifiedReservation);
+                });
+
+            function renderReservationDetails(reservation) {
 
             reservationDetailsContent.innerHTML = `
                 <div class="mb-4 pb-4 border-b border-gray-800">
                     <div class="flex justify-between">
                         <div>
-                            <h4 class="text-white font-bold">Reservation #${reservationId}</h4>
+                            <h4 class="text-white font-bold">Reservation #${reservation.id}</h4>
                             <p class="text-gray-400 text-sm">Created on {{ today|date:"M d, Y" }}</p>
                         </div>
-                        <span class="status-badge ${statusClass}">${status}</span>
+                        <span class="status-badge ${reservation.status_class || ''}">${reservation.status || reservation.get_status_display || 'Pending'}</span>
                     </div>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     <div>
                         <h4 class="text-white font-bold mb-2">Guest Information</h4>
-                        <p class="text-gray-400">${name}</p>
-                        <div class="text-gray-400">${contact}</div>
+                        <p class="text-gray-400">${reservation.name}</p>
+                        <div class="text-gray-400">${reservation.email ? `<div>${reservation.email}</div>` : ''}${reservation.phone ? `<div>${reservation.phone}</div>` : ''}</div>
                     </div>
                     <div>
                         <h4 class="text-white font-bold mb-2">Reservation Details</h4>
-                        <p class="text-gray-400">${dateTime}</p>
-                        <p class="text-gray-400">${partySize}</p>
+                        <p class="text-gray-400">${reservation.date} at ${reservation.time}</p>
+                        <p class="text-gray-400">Party of ${reservation.party_size}</p>
                         <div class="mt-2">
                             <span class="text-white font-medium">Table:</span>
-                            <span class="text-gray-400">${tableNumber}</span>
+                            <span class="text-gray-400">${reservation.table_number || 'Not assigned'}</span>
                         </div>
                     </div>
                 </div>
 
                 <div class="mb-4 pb-4 border-b border-gray-800">
                     <h4 class="text-white font-bold mb-2">Special Requests</h4>
-                    <p class="text-gray-400">${specialRequests}</p>
+                    <p class="text-gray-400">${reservation.special_requests || 'No special requests'}</p>
                 </div>
 
                 <!-- Menu Items Section -->
                 <div class="mb-4">
                     <h4 class="text-white font-bold mb-2">Menu Items</h4>
                     <div id="menu-items-container" class="bg-gray-900 p-3 rounded-lg">
-                        <p class="text-gray-400">Any menu items ordered with this reservation will appear here.</p>
+                        ${reservation.has_menu_items ? `
+                            <div class="space-y-2">
+                                <div class="text-food-gold font-medium">Pre-ordered Menu Items:</div>
+                                <div id="reservation-menu-items" class="text-gray-300">
+                                    ${reservation.menu_items && reservation.menu_items.length > 0 ? `
+                                        <table class="w-full text-sm mt-2">
+                                            <thead>
+                                                <tr class="border-b border-gray-700">
+                                                    <th class="text-left py-2">Item</th>
+                                                    <th class="text-center py-2">Qty</th>
+                                                    <th class="text-right py-2">Price</th>
+                                                    <th class="text-right py-2">Subtotal</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                ${reservation.menu_items.map(item => `
+                                                    <tr class="border-b border-gray-800">
+                                                        <td class="py-2">
+                                                            <div class="font-medium">${item.name}</div>
+                                                            ${item.special_instructions ? `<div class="text-xs text-gray-400">Note: ${item.special_instructions}</div>` : ''}
+                                                        </td>
+                                                        <td class="py-2 text-center">${item.quantity}</td>
+                                                        <td class="py-2 text-right">₱${item.price.toFixed(2)}</td>
+                                                        <td class="py-2 text-right text-food-gold">₱${item.subtotal.toFixed(2)}</td>
+                                                    </tr>
+                                                `).join('')}
+                                                <tr>
+                                                    <td colspan="3" class="py-2 text-right font-medium">Total:</td>
+                                                    <td class="py-2 text-right font-bold text-food-gold">₱${reservation.menu_items.reduce((sum, item) => sum + item.subtotal, 0).toFixed(2)}</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    ` : `<p class="text-gray-400 mt-2">Menu items data is not available.</p>`}
+                                </div>
+                            </div>
+                        ` : `
+                            <p class="text-gray-400">No menu items ordered with this reservation.</p>
+                        `}
                     </div>
                 </div>
 
@@ -493,7 +571,7 @@
 
                     <div class="space-x-2">
                         ${status === 'Pending' ? `
-                        <form method="post" action="/dashboard/reservations/${reservationId}/update-status/" class="inline">
+                        <form method="post" action="/manager/reservations/${reservationId}/update-status/" class="inline">
                             {% csrf_token %}
                             <button name="status" value="CONFIRMED" class="bg-green-700 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition duration-300">
                                 <i class="fas fa-check mr-2"></i> Approve

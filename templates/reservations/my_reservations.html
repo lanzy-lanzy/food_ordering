@@ -94,9 +94,16 @@
                         </td>
                         <td class="py-4">
                             {% if reservation.status == 'PENDING' %}
-                                <a href="{% url 'cancel_reservation' reservation.id %}" class="btn-danger btn-xs">Cancel</a>
+                                <div class="flex flex-col space-y-2">
+                                    <div class="flex space-x-2">
+                                        <a href="{% url 'edit_reservation' reservation.id %}" class="btn-secondary btn-xs">Edit</a>
+                                        <a href="{% url 'cancel_reservation' reservation.id %}" class="btn-danger btn-xs">Cancel</a>
+                                    </div>
+                                </div>
                             {% elif reservation.status == 'CONFIRMED' and reservation.payment_status != 'PAID' %}
-                                <a href="{% url 'reservation_payment' reservation.id %}" class="btn-primary btn-xs">Pay Now</a>
+                                <div class="flex flex-col space-y-2">
+                                    <a href="{% url 'reservation_payment' reservation.id %}" class="btn-primary btn-xs">Pay Now</a>
+                                </div>
                             {% elif reservation.status == 'CONFIRMED' and reservation.payment_status == 'PAID' %}
                                 <div class="flex flex-col space-y-2">
                                     <span class="text-green-300 text-xs">Awaiting preparation</span>
@@ -247,53 +254,7 @@
     // Alpine.js component initialization
     function reservationFormData() {
         return {
-            showMenuItems: false,
-            selectedTable: '',
-            selectedMenuItems: [],
-
-            // Add menu item to selection
-            addMenuItem(id, name, price) {
-                // Check if item already exists
-                const existingItem = this.selectedMenuItems.find(item => item.id === id);
-
-                if (existingItem) {
-                    // Increment quantity if already exists
-                    existingItem.quantity += 1;
-                } else {
-                    // Add new item
-                    this.selectedMenuItems.push({
-                        id: id,
-                        name: name,
-                        price: parseFloat(price),
-                        quantity: 1
-                    });
-                }
-            },
-
-            // Remove menu item from selection
-            removeMenuItem(id) {
-                const index = this.selectedMenuItems.findIndex(item => item.id === id);
-                if (index !== -1) {
-                    this.selectedMenuItems.splice(index, 1);
-                }
-            },
-
-            // Update quantity of menu item
-            updateQuantity(id, newQuantity) {
-                const item = this.selectedMenuItems.find(item => item.id === id);
-                if (item) {
-                    if (newQuantity <= 0) {
-                        this.removeMenuItem(id);
-                    } else {
-                        item.quantity = newQuantity;
-                    }
-                }
-            },
-
-            // Calculate total price
-            get totalPrice() {
-                return this.selectedMenuItems.reduce((sum, item) => sum + (item.price * item.quantity), 0).toFixed(2);
-            }
+            selectedTable: ''
         };
     }
 
@@ -551,6 +512,34 @@
                 const status = row.cells[4].querySelector('span').textContent;
                 const statusClass = row.cells[4].querySelector('span').className;
 
+                // Get reservation items if any
+                let reservationItemsHtml = '';
+                {% for res_id, items in reservation_items.items %}
+                if (reservationId == {{ res_id }}) {
+                    reservationItemsHtml = `
+                        <div class="mb-4">
+                            <h4 class="text-white font-bold mb-2">Pre-ordered Menu Items</h4>
+                            <div class="space-y-2">
+                                {% for item in items %}
+                                <div class="flex justify-between items-center p-3 bg-gray-700 rounded-lg">
+                                    <div>
+                                        <p class="text-white font-medium">{{ item.menu_item.name }}</p>
+                                        <p class="text-gray-400 text-sm">₱{{ item.price }} × {{ item.quantity }}</p>
+                                        {% if item.special_instructions %}
+                                        <p class="text-gray-400 text-xs mt-1">Note: {{ item.special_instructions }}</p>
+                                        {% endif %}
+                                    </div>
+                                    <div class="text-food-gold font-bold">
+                                        ₱{{ item.subtotal }}
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    `;
+                }
+                {% endfor %}
+
                 reservationDetailsContent.innerHTML = `
                     <div class="mb-4 pb-4 border-b border-gray-800">
                         <div class="flex justify-between">
@@ -583,6 +572,8 @@
                             <p class="text-gray-400">Status: <span class="${paymentClass}">${payment}</span></p>
                         </div>
                     </div>
+
+                    ${reservationItemsHtml}
 
                     <div class="mb-4">
                         <h4 class="text-white font-bold mb-2">Special Requests</h4>

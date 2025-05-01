@@ -60,30 +60,61 @@
     <!-- Quick Actions -->
     <div class="card p-6">
         <h2 class="text-xl font-bold mb-4">Quick Actions</h2>
-        <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
-            <a href="{% url 'new_order' %}" class="bg-food-gold hover:bg-food-gold-light text-white p-4 rounded-lg flex items-center justify-center">
-                <i class="fas fa-plus-circle mr-2 text-xl"></i>
-                <span class="font-medium">New Order</span>
-            </a>
 
-            <a href="{% url 'cashier_orders_list' %}" class="bg-gray-700 hover:bg-gray-600 text-white p-4 rounded-lg flex items-center justify-center">
-                <i class="fas fa-clipboard-list mr-2 text-xl"></i>
-                <span class="font-medium">View All Orders</span>
-            </a>
+        <!-- Two main process flows -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <!-- Walk-in Order Process -->
+            <div class="bg-gray-800 p-5 rounded-lg border-l-4 border-food-gold">
+                <h3 class="text-lg font-bold mb-3 flex items-center">
+                    <i class="fas fa-user-plus mr-2 text-food-gold"></i> Walk-in Order Process
+                </h3>
+                <p class="text-gray-400 mb-4">Create and manage orders for walk-in customers</p>
+                <div class="flex flex-col space-y-3">
+                    <a href="{% url 'new_order' %}" class="bg-food-gold hover:bg-food-gold-light text-white p-3 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-plus-circle mr-2"></i>
+                        <span class="font-medium">New Walk-in Order</span>
+                    </a>
+                    <a href="{% url 'cashier_orders_list' %}" class="bg-gray-700 hover:bg-gray-600 text-white p-3 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-clipboard-list mr-2"></i>
+                        <span class="font-medium">View All Orders</span>
+                    </a>
+                </div>
+            </div>
 
-            <a href="{% url 'pending_payments' %}" class="bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-lg flex items-center justify-center">
+            <!-- Reservation Process -->
+            <div class="bg-gray-800 p-5 rounded-lg border-l-4 border-blue-500">
+                <h3 class="text-lg font-bold mb-3 flex items-center">
+                    <i class="fas fa-calendar-check mr-2 text-blue-500"></i> Reservation Process
+                </h3>
+                <p class="text-gray-400 mb-4">Process confirmed reservations and payments</p>
+                <div class="flex flex-col space-y-3">
+                    <a href="{% url 'cashier_reservations_list' %}?status=unprocessed" class="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-utensils mr-2"></i>
+                        <span class="font-medium">Process Reservations</span>
+                    </a>
+                    <a href="{% url 'pending_reservation_payments' %}" class="bg-gray-700 hover:bg-gray-600 text-white p-3 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-money-bill-wave mr-2"></i>
+                        <span class="font-medium">Verify Reservation Payments</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Additional Actions -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <a href="{% url 'pending_payments' %}" class="bg-indigo-600 hover:bg-indigo-700 text-white p-4 rounded-lg flex items-center justify-center">
                 <i class="fas fa-money-bill-wave mr-2 text-xl"></i>
-                <span class="font-medium">Pending Payments</span>
+                <span class="font-medium">Pending GCash Payments</span>
+            </a>
+
+            <a href="{% url 'preparation_tracker' %}" class="bg-gray-700 hover:bg-gray-600 text-white p-4 rounded-lg flex items-center justify-center">
+                <i class="fas fa-tasks mr-2 text-xl"></i>
+                <span class="font-medium">Preparation Tracker</span>
             </a>
 
             <a href="{% url 'menu' %}" class="bg-gray-700 hover:bg-gray-600 text-white p-4 rounded-lg flex items-center justify-center">
                 <i class="fas fa-utensils mr-2 text-xl"></i>
                 <span class="font-medium">View Menu</span>
-            </a>
-
-            <a href="{% url 'cashier_profile_edit' %}" class="bg-green-600 hover:bg-green-700 text-white p-4 rounded-lg flex items-center justify-center">
-                <i class="fas fa-user-edit mr-2 text-xl"></i>
-                <span class="font-medium">Edit My Profile</span>
             </a>
         </div>
     </div>

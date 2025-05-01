@@ -9,6 +9,7 @@ from decimal import Decimal, InvalidOperation
 from django.contrib.auth.models import User
 from django.urls import reverse
 from datetime import datetime
+import json
 
 from .models import Order, OrderItem, MenuItem, StaffActivity, Payment, Refund, Reservation, Category, ReservationPayment
 
@@ -1198,43 +1199,41 @@ def process_reservation(request, reservation_id):
         order = Order.objects.filter(reservation=reservation).first()
         if order:
             return redirect('print_receipt', order_id=order.id)
-        return redirect('reservations_list')
+        return redirect('cashier_reservations_list')
 
     if reservation.payment_status not in ['PAID', 'PARTIALLY_PAID']:
         messages.error(request, f'Reservation #{reservation_id} cannot be processed until payment is completed or at least partially paid.')
-        return redirect('reservations_list')
+        return redirect('cashier_reservations_list')
+
+    # Get pre-ordered menu items if any
+    reservation_items = reservation.reservation_items.all()
+    has_menu_items = reservation_items.exists()
 
     if request.method == 'POST':
         with transaction.atomic():
+            # Get special requests without menu items data
+            special_requests = reservation.special_requests or ''
+            clean_special_requests = special_requests
+
+            # If using old format with menu items in special requests, clean it up
+            if '[MENU_ITEMS_DATA:' in special_requests:
+                try:
+                    start_index = special_requests.find('[MENU_ITEMS_DATA:')
+                    if start_index >= 0:
+                        end_index = special_requests.find(']', start_index)
+                        if end_index >= 0:
+                            # Clean the special requests by removing the menu items data
+                            clean_special_requests = special_requests[:start_index].strip()
+                except Exception as e:
+                    # Log the error but continue processing
+                    print(f"Error cleaning menu items data: {str(e)}")
+
+            # Update reservation status
             reservation.is_processed = True
             reservation.processed_by = request.user
             reservation.processed_at = timezone.now()
             reservation.status = 'COMPLETED'
             reservation.save(update_fields=['is_processed', 'processed_by', 'processed_at', 'status'])
-
-            # Extract menu items if present
-            menu_items_data = None
-            special_requests = reservation.special_requests or ''
-            import re
-            menu_items_match = re.search(r'\[MENU_ITEMS_DATA: (.+?)\]', special_requests)
-            if menu_items_match:
-                menu_items_json_str = menu_items_match.group(1)
-                clean_special_requests = re.sub(r'\n\n\[MENU_ITEMS_DATA: .+?\]', '', special_requests)
-                import json
-                try:
-                    menu_items_data = json.loads(menu_items_json_str)
-                except json.JSONDecodeError:
-                    print(f"Error parsing menu items data: {menu_items_json_str}")
-            else:
-                clean_special_requests = special_requests
-
-            # Calculate total amount
-            total_amount = Decimal('0.00')
-            if menu_items_data:
-                for item in menu_items_data:
-                    menu_item = MenuItem.objects.get(id=item['id'])
-                    quantity = item['quantity']
-                    total_amount += menu_item.price * Decimal(str(quantity))
 
             # Determine payment method/status
             payment_method = 'CASH'
@@ -1274,14 +1273,23 @@ def process_reservation(request, reservation_id):
                 number_of_guests=reservation.party_size,
                 special_instructions=clean_special_requests,
                 created_by=request.user,
-                total_amount=total_amount
+                total_amount=reservation.total_amount
             )
-            # Add menu items to order if any
-            if menu_items_data:
-                for item in menu_items_data:
-                    menu_item = MenuItem.objects.get(id=item['id'])
-                    quantity = item['quantity']
-                    order.order_items.create(menu_item=menu_item, quantity=quantity, price=menu_item.price)
+
+            # Add pre-ordered menu items to the order if any
+            if has_menu_items:
+                for item in reservation_items:
+                    OrderItem.objects.create(
+                        order=order,
+                        menu_item=item.menu_item,
+                        quantity=item.quantity,
+                        price=item.price,
+                        special_instructions=item.special_instructions
+                    )
+
+                    # Mark reservation item as prepared
+                    item.is_prepared = True
+                    item.save(update_fields=['is_prepared'])
 
             # Log activity
             StaffActivity.objects.create(
@@ -1314,41 +1322,19 @@ def pending_reservation_payments(request):
 
 @login_required
 def view_reservation_payment(request, payment_id):
-    """View details of a reservation payment"""
-    payment = get_object_or_404(ReservationPayment, id=payment_id)
-
-    # If the form is submitted with action=verify, redirect to verify_reservation_payment
-    if request.method == 'POST':
-        action = request.POST.get('action')
-        if action == 'verify':
-            return redirect('verify_reservation_payment', payment_id=payment_id)
-        elif action == 'reject':
-            return redirect('reject_reservation_payment', payment_id=payment_id)
-
-    context = {
-        'payment': payment,
-        'active_section': 'pending_reservation_payments'
-    }
-
-    return render(request, 'cashier/view_reservation_payment.html', context)
-
-
-@login_required
-def verify_reservation_payment(request, payment_id):
-    """Verify a reservation payment"""
+    """View and verify a reservation payment"""
     payment = get_object_or_404(ReservationPayment, id=payment_id)
 
     if request.method == 'POST':
-        print(f"[DEBUG] POST received for payment_id={payment_id}")
         action = request.POST.get('action')
         reservation = payment.reservation
-        print(f"[DEBUG] Action: {action}, Reservation Status: {reservation.status}")
-        if reservation.status != 'CONFIRMED':
-            print(f"[DEBUG] Blocked: Reservation not CONFIRMED")
-            messages.error(request, f'Reservation must be CONFIRMED before payment can be verified. Current status: {reservation.status}')
-            return redirect('view_reservation_payment', payment_id=payment_id)
+
         if action == 'verify':
-            print(f"[DEBUG] Verifying payment...")
+            # Check if reservation is in a valid state for verification
+            if reservation.status != 'CONFIRMED':
+                messages.error(request, f'Reservation must be CONFIRMED before payment can be verified. Current status: {reservation.status}')
+                return redirect('view_reservation_payment', payment_id=payment_id)
+
             # Mark payment as completed
             payment.status = 'COMPLETED'
             payment.verified_by = request.user
@@ -1362,12 +1348,10 @@ def verify_reservation_payment(request, payment_id):
             ).exclude(id=payment.id)
 
             if other_pending_payments.exists():
-                print(f"[DEBUG] Cleaning up other pending payments...")
                 for old_payment in other_pending_payments:
                     old_payment.delete()
 
             # Update the reservation status to CONFIRMED
-            reservation = payment.reservation
             reservation.status = 'CONFIRMED'
 
             # Update payment status based on payment type
@@ -1387,10 +1371,7 @@ def verify_reservation_payment(request, payment_id):
                     reservation.payment_status = 'PARTIALLY_PAID'
 
             # Save the reservation with updated status
-            reservation.save()
-
-            # Log the status change for debugging
-            print(f"Updated reservation #{reservation.id} status to {reservation.status} and payment_status to {reservation.payment_status}")
+            reservation.save(update_fields=['status', 'payment_status'])
 
             # Check if there are any existing orders for this reservation
             orders = Order.objects.filter(
@@ -1400,7 +1381,6 @@ def verify_reservation_payment(request, payment_id):
             )
 
             if orders.exists():
-                print(f"[DEBUG] Updating order with payment...")
                 order = orders.first()
                 order.payment_method = 'GCASH'
                 if payment.payment_type == 'FULL':
@@ -1432,8 +1412,6 @@ def verify_reservation_payment(request, payment_id):
                     )
                 order.save(update_fields=['payment_method', 'payment_status', 'status'])
                 messages.success(request, f'Payment verified and order #{order.id} has been updated.')
-            else:
-                print(f"[DEBUG] No matching order found for reservation.")
 
             StaffActivity.objects.create(
                 staff=request.user,
@@ -1452,17 +1430,14 @@ def verify_reservation_payment(request, payment_id):
             return redirect('pending_reservation_payments')
         elif action == 'reject':
             return redirect('reject_reservation_payment', payment_id=payment_id)
-        else:
-            print(f"[DEBUG] Invalid action: {action}")
-            messages.error(request, 'Invalid action.')
-            return redirect('view_reservation_payment', payment_id=payment_id)
 
-    # If it's a GET request, show the verification form
     context = {
         'payment': payment,
         'active_section': 'pending_reservation_payments'
     }
-    return render(request, 'cashier/verify_reservation_payment.html', context)
+
+    return render(request, 'cashier/view_reservation_payment.html', context)
+
 
 @login_required
 def reject_reservation_payment(request, payment_id):

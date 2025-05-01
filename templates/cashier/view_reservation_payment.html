@@ -91,9 +91,13 @@
 
                     <div class="bg-gray-800/70 p-5 rounded-lg border border-gray-700 shadow-lg">
                         <div class="flex flex-col md:flex-row space-y-4 md:space-y-0 md:space-x-4 justify-center">
-                            <a href="{% url 'verify_reservation_payment' payment.id %}" class="btn-success w-full md:w-auto text-center">
-                                <i class="fas fa-check-circle mr-2"></i> Verify and Complete
-                            </a>
+                            <form method="POST" action="{% url 'view_reservation_payment' payment.id %}" class="w-full md:w-auto">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="verify">
+                                <button type="submit" class="btn-success w-full md:w-auto">
+                                    <i class="fas fa-check-circle mr-2"></i> Verify and Complete
+                                </button>
+                            </form>
                             <button type="button" onclick="openRejectModal()" class="btn-danger w-full md:w-auto">
                                 <i class="fas fa-times-circle mr-2"></i> Reject Payment
                             </button>
@@ -162,11 +166,30 @@
 
                     <div class="bg-gray-800 p-3 rounded-lg">
                         <div class="text-xs text-gray-500 mb-1">Menu Items</div>
-                        {% if payment.reservation.total_amount > 0 %}
-                        <div class="font-medium text-food-gold">₱{{ payment.reservation.total_amount }}</div>
-                        <div class="text-sm text-gray-400 mt-1">Customer has pre-ordered menu items</div>
+                        {% if payment.includes_menu_items %}
+                            <div class="font-medium text-food-gold">₱{{ payment.reservation.total_amount }}</div>
+                            <div class="text-sm text-gray-400 mt-1">Customer has pre-ordered menu items</div>
+
+                            {% with reservation_items=payment.reservation.reservation_items.all %}
+                            {% if reservation_items %}
+                            <div class="mt-3 pt-3 border-t border-gray-700">
+                                <div class="text-xs text-gray-500 mb-2">Pre-ordered Items:</div>
+                                <div class="space-y-2">
+                                    {% for item in reservation_items %}
+                                    <div class="flex justify-between items-center bg-gray-700 p-2 rounded">
+                                        <div>
+                                            <div class="text-white text-sm">{{ item.quantity }}x {{ item.menu_item.name }}</div>
+                                            <div class="text-xs text-gray-400">₱{{ item.price }} each</div>
+                                        </div>
+                                        <div class="text-food-gold font-medium">₱{{ item.subtotal }}</div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endif %}
+                            {% endwith %}
                         {% else %}
-                        <div class="text-sm text-gray-400">No menu items ordered</div>
+                            <div class="text-sm text-gray-400">No menu items ordered</div>
                         {% endif %}
                     </div>
 

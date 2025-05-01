@@ -66,6 +66,7 @@ TEMPLATES = [
                 'django.contrib.messages.context_processors.messages',
                 'ecommerce.context_processors.cart_processor',
                 'ecommerce.context_processors.reservation_processor',
+                'ecommerce.context_processors.customer_notification_processor',
             ],
         },
     },
@@ -142,3 +143,16 @@ TEMPLATES[0]['DIRS'].append(os.path.join(BASE_DIR, 'templates'))
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = 'login'
+
+# Email settings
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'  # For development
+# For production, use SMTP backend:
+# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+# EMAIL_HOST = 'smtp.example.com'
+# EMAIL_PORT = 587
+# EMAIL_USE_TLS = True
+# EMAIL_HOST_USER = 'your-email@example.com'
+# EMAIL_HOST_PASSWORD = 'your-password'
+
+# Default from email
+DEFAULT_FROM_EMAIL = '5th Avenue Grill and Restobar <noreply@5thavenuegrill.com>'

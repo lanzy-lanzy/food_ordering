@@ -10,7 +10,7 @@ from django.utils import timezone
 from django.db import models
 from django.db.models import Count, Sum
 from decimal import Decimal
-from .models import Category, MenuItem, Cart, CartItem, Order, OrderItem, Review, Reservation, StaffProfile, CustomerProfile, Payment, Refund, ReservationPayment, StaffActivity
+from .models import Category, MenuItem, Cart, CartItem, Order, OrderItem, Review, Reservation, Payment, Refund, ReservationPayment, StaffActivity
 from django.contrib.auth.forms import PasswordChangeForm
 from .forms import RegistrationForm, CheckoutForm, GCashPaymentForm, ReservationForm, ReservationPaymentForm
 import logging
@@ -846,9 +846,7 @@ def make_reservation(request):
     # Get available tables
     occupied_tables = get_occupied_tables()
 
-    # Get menu items and categories for ordering
-    menu_items = MenuItem.objects.filter(is_available=True)
-    categories = Category.objects.filter(is_active=True)
+    # We no longer need menu items for reservation
 
     # Get user profile information
     user_email = request.user.email
@@ -863,6 +861,10 @@ def make_reservation(request):
             table_number = request.POST.get('table_number')
             date = form.cleaned_data['date']
             time = form.cleaned_data['time']
+
+            # Get menu items and preparation options
+            has_menu_items = request.POST.get('has_menu_items') == 'on'
+            prepare_ahead = request.POST.get('prepare_ahead') == 'on'
 
             # Look for existing reservations with the same details
             existing_reservation = Reservation.objects.filter(
@@ -884,7 +886,13 @@ def make_reservation(request):
                 reservation.email = form.cleaned_data['email']
                 reservation.phone = form.cleaned_data['phone']
                 reservation.party_size = form.cleaned_data['party_size']
-                reservation.special_requests = form.cleaned_data['special_requests']
+
+                # Update special requests
+                special_requests = form.cleaned_data['special_requests'] or ''
+                reservation.special_requests = special_requests
+                reservation.has_menu_items = has_menu_items
+                reservation.prepare_ahead = prepare_ahead
+
                 if table_number:
                     reservation.table_number = table_number
             else:
@@ -894,35 +902,21 @@ def make_reservation(request):
                     reservation = form.save(commit=False)
                     reservation.user = request.user  # Always associate with the logged-in user
 
+                    # Set menu items flag if requested
+                    reservation.special_requests = reservation.special_requests or ''
+
+                    reservation.has_menu_items = has_menu_items
+                    reservation.prepare_ahead = prepare_ahead
+
                     # Add table number if selected
                     if table_number:
                         reservation.table_number = table_number
 
-            # Process menu items if any were selected (for both new and existing reservations)
-            menu_items_data = request.POST.get('menu_items_data')
-            total_amount = Decimal('0.00')
-
-            if menu_items_data:
-                try:
-                    import json
-                    menu_items_json = json.loads(menu_items_data)
-
-                    if menu_items_json and len(menu_items_json) > 0:
-                        # Calculate total amount for the reservation
-                        for item in menu_items_json:
-                            menu_item = MenuItem.objects.get(id=item['id'])
-                            quantity = item['quantity']
-                            total_amount += menu_item.price * Decimal(str(quantity))
-                except Exception as e:
-                    # Log the error but continue with the reservation
-                    print(f"Error processing menu items: {str(e)}")
-
-            # Set the total amount for the reservation
-            reservation.total_amount = total_amount
+            # Set a fixed reservation fee
+            reservation.total_amount = Decimal('100.00')  # Fixed reservation fee
             reservation.save()
 
-            # Store menu items in session for later use
-            request.session['reservation_menu_items'] = menu_items_data
+            # Store reservation ID in session
             request.session['reservation_id'] = reservation.id
 
             # Check if this is an AJAX request
@@ -966,8 +960,6 @@ def make_reservation(request):
     context = {
         'form': form,
         'occupied_tables': occupied_tables,
-        'menu_items': menu_items,
-        'categories': categories,
         'active_section': 'make_reservation'
     }
 
@@ -976,7 +968,7 @@ def make_reservation(request):
 
 @login_required
 def reservation_payment(request, reservation_id):
-    """GCash payment page for reservations"""
+    """GCash payment page for reservations and pre-ordered menu items"""
     try:
         reservation = Reservation.objects.get(id=reservation_id, user=request.user)
 
@@ -989,6 +981,13 @@ def reservation_payment(request, reservation_id):
         if reservation.payment_status == 'PAID':
             messages.info(request, 'This reservation has already been paid.')
             return redirect('my_reservations')
+
+        # Make sure the total amount is up-to-date with any pre-ordered menu items
+        reservation.calculate_total()
+
+        # Get pre-ordered menu items if any
+        reservation_items = reservation.reservation_items.all()
+        has_menu_items = reservation_items.exists()
 
         # Check for existing pending payments
         existing_payments = ReservationPayment.objects.filter(
@@ -1011,7 +1010,8 @@ def reservation_payment(request, reservation_id):
                 reservation=reservation,
                 status='PENDING',
                 amount=Decimal('0.00'),  # Will be set based on payment type
-                payment_method='GCASH'
+                payment_method='GCASH',
+                includes_menu_items=has_menu_items
             )
 
         if request.method == 'POST':
@@ -1019,46 +1019,27 @@ def reservation_payment(request, reservation_id):
             if form.is_valid():
                 payment = form.save(commit=False)
 
-                # Calculate payment amount based on payment type
-                payment_type = form.cleaned_data['payment_type']
-                if payment_type == 'FULL':
-                    payment.amount = reservation.total_amount
-                else:  # DEPOSIT (50%)
-                    payment.amount = reservation.total_amount * Decimal('0.5')
-
+                # The payment model will calculate the appropriate amount based on payment type
                 payment.status = 'PENDING'  # Will be verified by staff
+                payment.includes_menu_items = has_menu_items
                 payment.save()
 
-                # Store menu items data in the reservation for later processing by cashier
-                menu_items_data = request.session.get('reservation_menu_items')
-                if menu_items_data:
-                    try:
-                        # Store the menu items data in the reservation's special_requests field
-                        # This will be used by the cashier when processing the reservation
-                        if not reservation.special_requests:
-                            reservation.special_requests = ''
-
-                        # Add a note about menu items being included
-                        reservation.special_requests += f"\n\n[MENU_ITEMS_DATA: {menu_items_data}]"
-                        reservation.save(update_fields=['special_requests'])
-
-                        # Clear session data
-                        if 'reservation_menu_items' in request.session:
-                            del request.session['reservation_menu_items']
-                        if 'reservation_id' in request.session:
-                            del request.session['reservation_id']
-                    except Exception as e:
-                        messages.error(request, f"Error storing menu items: {str(e)}")
+                # Clear session data
+                if 'reservation_id' in request.session:
+                    del request.session['reservation_id']
 
                 messages.success(request, 'Your payment has been submitted and is awaiting verification. You will receive a confirmation once it is approved.')
                 return redirect('my_reservations')
         else:
             form = ReservationPaymentForm(instance=payment)
 
+        # Return the template with context
         return render(request, 'reservations/reservation_payment.html', {
             'reservation': reservation,
             'payment': payment,
-            'form': form
+            'form': form,
+            'reservation_items': reservation_items,
+            'has_menu_items': has_menu_items
         })
     except Reservation.DoesNotExist:
         messages.error(request, 'Reservation not found.')
@@ -1088,8 +1069,17 @@ def my_reservations(request):
 
     # Get data for reservation modal
     occupied_tables = get_occupied_tables()
-    menu_items = MenuItem.objects.filter(is_available=True)
-    categories = Category.objects.filter(is_active=True)
+
+    # Get reservation items for each reservation
+    reservation_items = {}
+    for reservation in reservations:
+        items = reservation.reservation_items.all()
+        if items.exists():
+            reservation_items[reservation.id] = items
+            # Make sure has_menu_items is set correctly
+            if not reservation.has_menu_items:
+                reservation.has_menu_items = True
+                reservation.save(update_fields=['has_menu_items'])
 
     context = {
         'reservations': reservations,
@@ -1099,12 +1089,77 @@ def my_reservations(request):
         'active_section': 'my_reservations',
         # Reservation modal data
         'occupied_tables': occupied_tables,
-        'menu_items': menu_items,
-        'categories': categories
+        # Reservation items
+        'reservation_items': reservation_items
     }
 
     return render(request, 'reservations/my_reservations.html', context)
 
+
+@login_required
+def edit_reservation(request, reservation_id):
+    """Allow customers to edit their pending reservations"""
+    reservation = get_object_or_404(Reservation, id=reservation_id, user=request.user)
+
+    # Only allow editing of pending reservations
+    if reservation.status != 'PENDING':
+        messages.warning(request, 'Only pending reservations can be edited.')
+        return redirect('my_reservations')
+
+    # Get available tables
+    occupied_tables = get_occupied_tables()
+
+    if request.method == 'POST':
+        form = ReservationForm(request.POST, instance=reservation, user=request.user)
+        if form.is_valid():
+            # Get table number from form
+            table_number = request.POST.get('table_number')
+
+            # Update reservation
+            reservation = form.save(commit=False)
+
+            # Add table number if selected
+            if table_number:
+                reservation.table_number = table_number
+
+            reservation.save()
+
+            # Check if this is an AJAX request
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({
+                    'success': True,
+                    'message': 'Reservation updated successfully.',
+                    'reservation_id': reservation.id
+                })
+            else:
+                messages.success(request, 'Your reservation has been updated successfully.')
+                return redirect('my_reservations')
+        else:
+            # If AJAX request and form is invalid
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                errors = {}
+                for field, error_list in form.errors.items():
+                    errors[field] = [str(error) for error in error_list]
+
+                return JsonResponse({
+                    'success': False,
+                    'message': 'Please correct the errors below.',
+                    'errors': errors
+                })
+            else:
+                messages.error(request, 'Please correct the errors below.')
+    else:
+        form = ReservationForm(instance=reservation, user=request.user)
+
+    context = {
+        'form': form,
+        'reservation': reservation,
+        'occupied_tables': occupied_tables,
+        'active_section': 'my_reservations',
+        'is_edit': True
+    }
+
+    return render(request, 'reservations/edit_reservation.html', context)
 
 @login_required
 def cancel_reservation(request, reservation_id):
@@ -1159,7 +1214,7 @@ def update_reservation_status(request, reservation_id):
     """Update the status of a reservation"""
     reservation = get_object_or_404(Reservation, id=reservation_id)
 
-    # Only allow MANAGER to approve/confirm/cancel reservations
+    # Only allow MANAGER to approve/reject reservations
     has_manager_role = hasattr(request.user, 'staff_profile') and getattr(request.user.staff_profile, 'role', None) == 'MANAGER'
     if not has_manager_role:
         logger.warning(f"User {request.user} attempted to update reservation {reservation_id} without MANAGER role.")
@@ -1168,32 +1223,25 @@ def update_reservation_status(request, reservation_id):
 
     if request.method == 'POST':
         new_status = request.POST.get('status')
-        logger.info(f"Manager {request.user} is attempting to set reservation {reservation_id} to {new_status}")
-        valid_transitions = {
-            'PENDING': ['CONFIRMED', 'CANCELLED'],
-            'CONFIRMED': [],
-            'COMPLETED': [],
-            'CANCELLED': []
-        }
-        current_status = reservation.status
-        if new_status in dict(Reservation.STATUS_CHOICES):
-            if new_status in valid_transitions.get(current_status, []):
-                reservation.status = new_status
-                reservation.save()
-                StaffActivity.objects.create(
-                    staff=request.user,
-                    action='UPDATE_RESERVATION',
-                    details=f"Manager updated reservation #{reservation_id} status to {dict(Reservation.STATUS_CHOICES)[new_status]}"
-                )
-                logger.info(f"Reservation {reservation_id} status updated to {new_status} by MANAGER {request.user}")
-                messages.success(request, f'Reservation status updated to {dict(Reservation.STATUS_CHOICES)[new_status]}')
-            else:
-                logger.warning(f"Invalid status transition from {current_status} to {new_status} for reservation {reservation_id}")
-                messages.error(request, f'Invalid status transition from {current_status} to {new_status}.')
+
+        # Simplified status transitions - only allow PENDING to CONFIRMED or CANCELLED
+        if reservation.status == 'PENDING' and new_status in ['CONFIRMED', 'CANCELLED']:
+            reservation.status = new_status
+            reservation.save()
+
+            # Log the activity
+            StaffActivity.objects.create(
+                staff=request.user,
+                action='UPDATE_RESERVATION',
+                details=f"Manager updated reservation #{reservation_id} status to {dict(Reservation.STATUS_CHOICES)[new_status]}"
+            )
+
+            # Show success message
+            status_display = 'Approved' if new_status == 'CONFIRMED' else 'Rejected'
+            messages.success(request, f'Reservation has been {status_display}')
         else:
-            logger.error(f"Invalid status provided: {new_status} for reservation {reservation_id}")
-            messages.error(request, 'Invalid status provided')
-        return redirect('reservations_dashboard')
+            messages.error(request, 'Invalid status change requested')
+
     return redirect('reservations_dashboard')
 
 
@@ -1472,8 +1520,6 @@ def customer_dashboard(request):
 
     # Get data for reservation modal
     occupied_tables = get_occupied_tables()
-    menu_items = MenuItem.objects.filter(is_available=True)
-    categories = Category.objects.filter(is_active=True)
 
     # Check for active orders (preparing or ready)
     has_active_orders = user_orders.filter(status__in=['PREPARING', 'READY']).exists()
@@ -1496,8 +1542,6 @@ def customer_dashboard(request):
         'active_section': 'dashboard',
         # Reservation modal data
         'occupied_tables': occupied_tables,
-        'menu_items': menu_items,
-        'categories': categories,
         # Active orders/reservations flags
         'has_active_orders': has_active_orders,
         'has_active_reservations': has_active_reservations,
@@ -1593,6 +1637,9 @@ def reservation_feedback(request, reservation_id):
         return redirect('my_reservations')
 
     return render(request, 'reservations/reservation_feedback_form.html', {'reservation': reservation})
+
+
+
 
 
 def track_preparation(request, tracking_type, tracking_id):
@@ -1898,24 +1945,4 @@ def admin_dashboard(request):
     return render(request, 'admin/dashboard.html', context)
 
 
-@login_required
-@permission_required('ecommerce.change_reservation', raise_exception=True)
-def cashier_add_menu_items_to_reservation(request, reservation_id):
-    reservation = get_object_or_404(Reservation, id=reservation_id)
-
-    if request.method == 'POST':
-        form = AddMenuItemsToReservationForm(request.POST)
-        if form.is_valid():
-            menu_items = form.cleaned_data['menu_items']
-            for item in menu_items:
-                reservation.menu_items.add(item)
-            reservation.save()
-            messages.success(request, 'Menu items added to reservation successfully!')
-            return redirect('cashier_reservations_list')
-    else:
-        form = AddMenuItemsToReservationForm()
-
-    return render(request, 'cashier/add_menu_items_to_reservation.html', {
-        'reservation': reservation,
-        'form': form
-    })
+# Removed cashier_add_menu_items_to_reservation view as part of simplifying the reservation process

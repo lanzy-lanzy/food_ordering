@@ -118,6 +118,8 @@ class Reservation(models.Model):
     )
     table_number = models.CharField(max_length=10, blank=True, null=True)
     special_requests = models.TextField(blank=True)
+    has_menu_items = models.BooleanField(default=False, help_text="Whether the reservation includes pre-ordered menu items")
+    prepare_ahead = models.BooleanField(default=False, help_text="Whether to prepare food 20 minutes before reservation time")
     status = models.CharField(
         max_length=10,
         choices=STATUS_CHOICES,
@@ -134,6 +136,7 @@ class Reservation(models.Model):
     processed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    items = models.ManyToManyField(MenuItem, through='ReservationItem')
 
     class Meta:
         ordering = ['-date', '-time']
@@ -168,6 +171,22 @@ class Reservation(models.Model):
     def save(self, *args, **kwargs):
         self.clean()
         super().save(*args, **kwargs)
+
+        # Update total amount if there are reservation items
+        if hasattr(self, 'reservation_items') and self.pk:
+            self.calculate_total()
+
+    def calculate_total(self):
+        """Calculate the total amount for the reservation including pre-ordered menu items"""
+        items_total = sum(item.subtotal for item in self.reservation_items.all())
+
+        # Only update if there's a change to avoid infinite recursion
+        if self.total_amount != items_total and items_total > 0:
+            self.total_amount = items_total
+            # Use update to avoid triggering save() again
+            Reservation.objects.filter(pk=self.pk).update(total_amount=items_total)
+
+        return self.total_amount
 
     def __str__(self):
         return f"Reservation for {self.name} - {self.date} {self.time}"
@@ -355,6 +374,7 @@ class ReservationPayment(models.Model):
     verified_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='verified_reservation_payments')
     verification_date = models.DateTimeField(null=True, blank=True)
     notes = models.TextField(blank=True)
+    includes_menu_items = models.BooleanField(default=True, help_text="Whether this payment includes pre-ordered menu items")
 
     class Meta:
         ordering = ['-payment_date']
@@ -363,12 +383,25 @@ class ReservationPayment(models.Model):
         return f"Payment of ₱{self.amount} for Reservation #{self.reservation.id} via {self.get_payment_method_display()}"
 
     def save(self, *args, **kwargs):
+        # Calculate the appropriate amount based on payment type and reservation total
+        reservation = self.reservation
+
+        # If this is a new payment (no ID yet) and amount is not set
+        if not self.pk and self.amount == 0:
+            # Make sure the reservation total is up-to-date
+            reservation.calculate_total()
+
+            # Set the payment amount based on payment type
+            if self.payment_type == 'FULL':
+                self.amount = reservation.total_amount
+            else:  # DEPOSIT
+                # 50% of the total amount
+                self.amount = reservation.total_amount * decimal.Decimal('0.5')
+
         super().save(*args, **kwargs)
 
         # Update reservation payment status if this payment is completed
         if self.status == 'COMPLETED':
-            reservation = self.reservation
-
             # If this is a FULL payment, always mark as PAID regardless of amount
             if self.payment_type == 'FULL':
                 reservation.payment_status = 'PAID'
@@ -391,6 +424,58 @@ class ReservationPayment(models.Model):
 
             # Save the reservation with updated status and payment status
             reservation.save(update_fields=['status', 'payment_status'])
+
+
+class ReservationItem(models.Model):
+    reservation = models.ForeignKey(Reservation, on_delete=models.CASCADE, related_name='reservation_items')
+    menu_item = models.ForeignKey(MenuItem, on_delete=models.CASCADE)
+    quantity = models.PositiveIntegerField(default=1)
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+    special_instructions = models.TextField(blank=True)
+    inventory_updated = models.BooleanField(default=False)
+    is_prepared = models.BooleanField(default=False, help_text="Whether this item has been prepared")
+
+    class Meta:
+        ordering = ['reservation', 'menu_item']
+
+    def __str__(self):
+        return f"{self.quantity}x {self.menu_item.name} for Reservation #{self.reservation.id}"
+
+    @property
+    def subtotal(self):
+        return self.quantity * self.price
+
+    def save(self, *args, **kwargs):
+        # If price is not set, use the menu item's current price
+        if not self.price:
+            self.price = self.menu_item.price
+
+        # Call the original save method
+        super().save(*args, **kwargs)
+
+        # Update the reservation's total amount
+        self.reservation.calculate_total()
+
+        # Update inventory if not already updated and reservation is confirmed
+        if not self.inventory_updated and self.reservation.status == 'CONFIRMED':
+            # Create inventory transaction for this pre-order
+            try:
+                InventoryTransaction.objects.create(
+                    menu_item=self.menu_item,
+                    transaction_type='SALE',
+                    quantity=-self.quantity,  # Negative because it's reducing stock
+                    unit_price=self.price,
+                    total_price=self.subtotal,
+                    reference=f"Reservation #{self.reservation.id}",
+                    notes=f"Pre-order through reservation #{self.reservation.id}"
+                )
+
+                # Mark as updated
+                self.inventory_updated = True
+                super().save(update_fields=['inventory_updated'])
+            except Exception as e:
+                # Log the error but don't stop the process
+                print(f"Error creating inventory transaction for reservation item: {str(e)}")
 
 
 class OrderItem(models.Model):

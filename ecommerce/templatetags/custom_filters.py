@@ -1,4 +1,5 @@
 from django import template
+import json
 
 register = template.Library()
 
@@ -53,3 +54,34 @@ def is_step_active(order, step):
     if step == 'CANCELLED' and order.status == 'CANCELLED':
         return True
     return False
+
+@register.filter
+def format_menu_items(menu_items_data):
+    """Format menu items data from JSON to a readable format"""
+    if not menu_items_data:
+        return ""
+
+    try:
+        # Try to parse the JSON data
+        if isinstance(menu_items_data, str):
+            items = json.loads(menu_items_data)
+        else:
+            items = menu_items_data
+
+        if not items:
+            return ""
+
+        # Format the items into a readable string
+        formatted_items = []
+        for item in items:
+            if isinstance(item, dict):
+                name = item.get('name', 'Unknown Item')
+                quantity = item.get('quantity', 1)
+                formatted_items.append(f"{quantity}x {name}")
+            else:
+                formatted_items.append(str(item))
+
+        return ", ".join(formatted_items)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        # If there's an error parsing the JSON, return a placeholder
+        return "Menu items available"

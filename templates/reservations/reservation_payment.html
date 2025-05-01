@@ -76,32 +76,41 @@
                     {% endif %}
                 </div>
 
-                <!-- Payment Options -->
+                <!-- Payment Instructions -->
                 <div class="p-6 border-b border-gray-700 bg-gradient-to-b from-gray-800 to-gray-900">
                     <div class="flex items-start mb-6">
                         <div class="bg-blue-600/30 rounded-full p-3 mr-4 shadow-lg shadow-blue-900/20">
                             <i class="fas fa-info-circle text-blue-400 text-xl"></i>
                         </div>
                         <div>
-                            <h3 class="text-lg font-semibold mb-3 text-white">Payment Options</h3>
+                            <h3 class="text-lg font-semibold mb-3 text-white">Payment Instructions</h3>
                             <div class="bg-gray-800/50 p-4 rounded-lg border-l-4 border-blue-500">
-                                <p class="text-gray-300 mb-3">Choose your preferred payment option:</p>
-                                
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                                    <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
-                                        <div class="flex justify-between items-center mb-2">
-                                            <h4 class="font-semibold text-white">Full Payment</h4>
-                                            <span class="bg-green-900/50 text-green-400 text-xs px-2 py-1 rounded-full">Recommended</span>
+                                <p class="text-gray-300 mb-3">Please complete your payment to secure your reservation:</p>
+
+                                <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+                                    <div class="flex justify-between items-center mb-2">
+                                        <h4 class="font-semibold text-white">Reservation Fee</h4>
+                                        <span class="bg-green-900/50 text-green-400 text-xs px-2 py-1 rounded-full">Required</span>
+                                    </div>
+                                    <p class="text-gray-400 text-sm mb-2">Pay the reservation fee to secure your table.</p>
+                                    <div class="text-xl font-bold text-food-gold">₱{{ reservation.total_amount }}</div>
+
+                                    {% if has_menu_items %}
+                                    <div class="mt-4 pt-4 border-t border-gray-700">
+                                        <h5 class="font-semibold text-white mb-2">Pre-ordered Menu Items</h5>
+                                        <div class="space-y-2">
+                                            {% for item in reservation_items %}
+                                            <div class="flex justify-between items-center bg-gray-700 p-2 rounded">
+                                                <div>
+                                                    <div class="text-white">{{ item.quantity }}x {{ item.menu_item.name }}</div>
+                                                    <div class="text-xs text-gray-400">₱{{ item.price }} each</div>
+                                                </div>
+                                                <div class="text-food-gold font-medium">₱{{ item.subtotal }}</div>
+                                            </div>
+                                            {% endfor %}
                                         </div>
-                                        <p class="text-gray-400 text-sm mb-2">Pay the full amount now to secure your reservation.</p>
-                                        <div class="text-xl font-bold text-food-gold">₱{{ reservation.total_amount }}</div>
                                     </div>
-                                    
-                                    <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
-                                        <h4 class="font-semibold text-white mb-2">50% Deposit</h4>
-                                        <p class="text-gray-400 text-sm mb-2">Pay 50% now and the rest upon arrival.</p>
-                                        <div class="text-xl font-bold text-food-gold">₱{{ reservation.total_amount|floatformat:2|cut:',0' }}</div>
-                                    </div>
+                                    {% endif %}
                                 </div>
                             </div>
                         </div>
@@ -161,33 +170,7 @@
                             </div>
                             {% endif %}
 
-                            <!-- Payment Type Selection -->
-                            <div class="form-group mb-6">
-                                <label class="block text-white font-medium mb-2">{{ form.payment_type.label }}</label>
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {% for radio in form.payment_type %}
-                                    <label class="bg-gray-800 p-4 rounded-lg border border-gray-700 flex items-start cursor-pointer hover:border-blue-500 transition-colors">
-                                        <div class="mr-3 mt-1">{{ radio.tag }}</div>
-                                        <div>
-                                            <div class="font-medium text-white">{{ radio.choice_label }}</div>
-                                            <div class="text-sm text-gray-400">
-                                                {% if radio.choice_value == 'FULL' %}
-                                                Pay the full amount of ₱{{ reservation.total_amount }}
-                                                {% else %}
-                                                Pay 50% deposit of ₱{{ reservation.total_amount|floatformat:2|cut:',0' }}
-                                                {% endif %}
-                                            </div>
-                                        </div>
-                                    </label>
-                                    {% endfor %}
-                                </div>
-                                {% if form.payment_type.errors %}
-                                <p class="text-red-500 text-sm mt-1">{{ form.payment_type.errors.0 }}</p>
-                                {% endif %}
-                                {% if form.payment_type.help_text %}
-                                <p class="text-gray-500 text-xs mt-1">{{ form.payment_type.help_text }}</p>
-                                {% endif %}
-                            </div>
+                            <input type="hidden" name="payment_type" value="FULL">
 
                             <!-- Reference Number -->
                             <div class="form-group mb-6">

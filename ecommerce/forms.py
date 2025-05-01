@@ -150,10 +150,20 @@ class ReservationForm(forms.ModelForm):
         required=False,
         help_text="Any special requests or notes for your reservation"
     )
+    has_menu_items = forms.BooleanField(
+        required=False,
+        initial=False,
+        help_text="Check this if you want to pre-order menu items with your reservation"
+    )
+    prepare_ahead = forms.BooleanField(
+        required=False,
+        initial=False,
+        help_text="Check this if you want your food prepared 20 minutes before your reservation time"
+    )
 
     class Meta:
         model = Reservation
-        fields = ('name', 'email', 'phone', 'date', 'time', 'party_size', 'special_requests')
+        fields = ('name', 'email', 'phone', 'date', 'time', 'party_size', 'special_requests', 'has_menu_items', 'prepare_ahead')
 
     def __init__(self, *args, **kwargs):
         user = kwargs.pop('user', None)
@@ -198,10 +208,4 @@ class ReservationForm(forms.ModelForm):
         return cleaned_data
 
 
-class AddMenuItemsToReservationForm(forms.Form):
-    menu_items = forms.ModelMultipleChoiceField(
-        queryset=MenuItem.objects.filter(is_available=True),
-        widget=forms.CheckboxSelectMultiple,
-        required=True,
-        help_text="Select menu items to add to this reservation."
-    )
+# Removed AddMenuItemsToReservationForm as part of simplifying the reservation process
